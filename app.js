@@ -82,6 +82,13 @@ async function sendMessage() {
   // Try AI first, fallback to keyword matching
   let matchedFaq = null;
   
+  // Check Enterprise Tools First
+  const handledByTool = await checkEnterpriseTools(text);
+  if (handledByTool) {
+    removeTyping(typingId);
+    return;
+  }
+  
   if (qaState) {
     handleQA(text);
     removeTyping(typingId);
@@ -168,6 +175,73 @@ function handleQA(text) {
   lastMatchedFaq = chosenFaq;
   renderFaqResponse(chosenFaq);
   qaState = null;
+}
+
+async function checkEnterpriseTools(text) {
+  const lower = text.toLowerCase();
+  
+  // AD Check Intent
+  if (lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account")) {
+    const words = lower.split(" ");
+    let username = words[words.length - 1].replace(/[^a-zA-Z0-9-]/g, '');
+    
+    // Extract name safely
+    const forIndex = words.findIndex(w => w === 'for');
+    if (forIndex !== -1 && forIndex < words.length - 1) {
+      username = words[forIndex + 1].replace(/[^a-zA-Z0-9-]/g, '');
+    }
+    
+    if (username.length < 3) return false;
+    
+    appendMessage(`🤖 Connecting to Active Directory for user: **${username}**...`, 'ai');
+    
+    try {
+      const res = await fetch(`http://localhost:8000/api/ad/${username}`);
+      const data = await res.json();
+      
+      if (data.status === "success") {
+        let html = `**Active Directory Results:**<br>`;
+        html += `• **Name:** ${data.data.DisplayName || 'N/A'}<br>`;
+        html += `• **Title:** ${data.data.Title || 'N/A'}<br>`;
+        html += `• **Department:** ${data.data.Department || 'N/A'}<br>`;
+        html += `• **Account Locked:** ${data.data.IsLocked ? '<span style="color:#ef4444;font-weight:bold;">⚠️ YES</span>' : '<span style="color:#22c55e;font-weight:bold;">✅ NO</span>'}<br>`;
+        appendMessage(html, 'ai');
+      } else {
+        appendMessage(`AD Query Failed: ${data.message}`, 'ai');
+      }
+    } catch (e) {
+      appendMessage(`Error connecting to Enterprise API. Is the Python backend running?`, 'ai');
+    }
+    return true;
+  }
+  
+  // SCCM Check Intent
+  if (lower.includes("check sccm") || lower.includes("find computer")) {
+    const words = lower.split(" ");
+    const device = words[words.length - 1];
+    appendMessage(`🤖 Querying SCCM Database for device: **${device}**...`, 'ai');
+    try {
+      const res = await fetch(`http://localhost:8000/api/sccm/${device}`);
+      const data = await res.json();
+      appendMessage(`**SCCM Status:** ${data.message}`, 'ai');
+    } catch (e) { appendMessage("Error connecting to Python backend server.", 'ai'); }
+    return true;
+  }
+  
+  // Mist Check Intent
+  if (lower.includes("check mist") || lower.includes("wifi status")) {
+    const words = lower.split(" ");
+    const mac = words[words.length - 1];
+    appendMessage(`🤖 Querying Juniper Mist for client: **${mac}**...`, 'ai');
+    try {
+      const res = await fetch(`http://localhost:8000/api/mist/${mac}`);
+      const data = await res.json();
+      appendMessage(`**Mist Status:** ${data.message}`, 'ai');
+    } catch (e) { appendMessage("Error connecting to Python backend server.", 'ai'); }
+    return true;
+  }
+
+  return false;
 }
 
 function getKeywordPrediction(text) {
