@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TRC AI Help Desk Assistant — SMSU</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🎓</div>
+      <div>
+        <div class="logo-title">TRC Assistant</div>
+        <div class="logo-sub">SMSU Help Desk AI</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-btn active" data-view="chat" onclick="switchView('chat')">
+        <span>💬</span> AI Assistant
+      </button>
+      <button class="nav-btn" data-view="faq" onclick="switchView('faq')">
+        <span>📚</span> FAQ Library
+      </button>
+      <button class="nav-btn" data-view="form" onclick="switchView('form')">
+        <span>📋</span> TDX Form Guide
+      </button>
+      <button class="nav-btn" data-view="links" onclick="switchView('links')">
+        <span>🔗</span> Quick Links
+      </button>
+    </nav>
+    <div class="sidebar-status">
+      <div class="status-dot" id="aiStatus"></div>
+      <span id="aiStatusText">Checking AI...</span>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main">
+
+    <!-- CHAT VIEW -->
+    <section class="view active" id="view-chat">
+      <div class="view-header">
+        <h1>Describe the Issue</h1>
+        <p>Tell me what's happening and I'll guide you through the right steps &amp; TDX form.</p>
+      </div>
+      <div class="chat-container">
+        <div class="chat-messages" id="chatMessages">
+          <div class="msg ai">
+            <div class="msg-avatar">🤖</div>
+            <div class="msg-bubble">
+              Hi! I'm your TRC AI assistant. Describe the tech issue you're dealing with and I'll help you identify the right service category, what info to gather, and how to fill in the TDX ticket form.<br><br>
+              <strong>Examples:</strong><br>
+              • "Printer is not working in the library"<br>
+              • "Student can't log in, account locked"<br>
+              • "MFA reset needed for faculty member"<br>
+              • "New employee needs to be set up"
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <textarea id="userInput" placeholder="Describe the issue here... (e.g. 'The printer in room BA 201 is showing offline')" rows="3" onkeydown="handleKey(event)"></textarea>
+          <button class="send-btn" onclick="sendMessage()">
+            <span>Send</span> ➤
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ VIEW -->
+    <section class="view" id="view-faq">
+      <div class="view-header">
+        <h1>FAQ Library</h1>
+        <p>Browse all 49 service categories from your resolved tickets.</p>
+      </div>
+      <div class="faq-search-bar">
+        <input type="text" id="faqSearch" placeholder="🔍 Search FAQs..." oninput="filterFAQ()"/>
+      </div>
+      <div class="faq-filters" id="faqFilters"></div>
+      <div class="faq-grid" id="faqGrid"></div>
+    </section>
+
+    <!-- FORM GUIDE VIEW -->
+    <section class="view" id="view-form">
+      <div class="view-header">
+        <h1>TDX Form Guide</h1>
+        <p>Learn how to fill in every field of the TDX ticket form correctly.</p>
+      </div>
+      <div class="form-guide" id="formGuide"></div>
+    </section>
+
+    <!-- LINKS VIEW -->
+    <section class="view" id="view-links">
+      <div class="view-header">
+        <h1>Quick Links</h1>
+        <p>All your daily TRC tools in one place.</p>
+      </div>
+      <div class="links-grid" id="linksGrid"></div>
+    </section>
+
+  </main>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
