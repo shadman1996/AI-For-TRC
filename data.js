@@ -8713,3 +8713,14 @@ const DIRECTORY_DATA =
                 }
 }
 ;
+
+const TDX_SEARCH_FIELDS = [
+  { field: "Text Search", description: "Search for keywords within ticket titles and descriptions." },
+  { field: "Requestor", description: "Filter tickets by the person who submitted them (Search by Name or StarID)." },
+  { field: "Acct/Dept", description: "Filter by specific university departments." },
+  { field: "Current Status", description: "Filter by ticket state (New, Open, In Process, On Hold, etc.)." },
+  { field: "Responsibility", description: "Find tickets assigned to a specific person or group (e.g., IT-Security)." },
+  { field: "Created Date Range", description: "Find tickets created between two specific dates." },
+  { field: "Location/Room", description: "Filter by physical campus location for hardware issues." },
+  { field: "Source", description: "Filter by how the ticket was submitted (Email, Phone, Portal, Walk-in)." }
+];

@@ -669,7 +669,7 @@ function closeModal(e, force) {
 // ----- FORM GUIDE LOGIC -----
 function renderFormGuide() {
   const container = document.getElementById('formGuide');
-  let html = '';
+  let html = '<h2>New Ticket Fields</h2>';
   
   TDX_FORM_FIELDS.forEach(field => {
     html += `
@@ -677,6 +677,16 @@ function renderFormGuide() {
         <h3>${field.field} ${field.required ? '<span class="required">(Required)</span>' : '<span class="optional">(Optional)</span>'}</h3>
         <p>${field.description}</p>
         <div class="tip">💡 <strong>Tip:</strong> ${field.tip}</div>
+      </div>
+    `;
+  });
+
+  html += '<h2 style="margin-top:40px;">Searching & Filtering Tickets</h2>';
+  TDX_SEARCH_FIELDS.forEach(field => {
+    html += `
+      <div class="form-field-card" style="border-left: 4px solid var(--accent2);">
+        <h3>${field.field}</h3>
+        <p>${field.description}</p>
       </div>
     `;
   });

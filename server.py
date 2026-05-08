@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="TRC Enterprise AI API")
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Enable CORS for local testing
 app.add_middleware(

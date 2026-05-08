@@ -41,4 +41,8 @@
     "TDX Group vs Individual Assignment Best Practice: Group assignment = ticket visible to all group members, good when multiple technicians can handle it. Individual assignment = single person is primary responsible party. Combined = group visibility + individual accountability. Best practice: always assign to the owning group and keep it there, use individual assignment within that group for accountability. Tickets should not remain unassigned indefinitely.",
     "TDX Escalation Process: If Help Desk cannot resolve, escalate by reassigning to the appropriate Tech group. Add an internal note documenting what was tried, what the result was, and why escalation is needed. The ticket stays in TDX and the new assignee gets notified. Do not close before escalating.",
     "TDX Help Desk First Response Workflow: 1) Create ticket with correct Classification, Type, and Service. 2) Gather info from user (StarID, device name, error message, steps taken). 3) Check AD for account issues. 4) Check SCCM for device status. 5) Search KB for known solutions. 6) Attempt resolution. 7) If unresolved, escalate to Tech group with internal note. 8) Update ticket status throughout."
-]
+]{
+    "title": "TeamDynamix Search & Filter Fields",
+    "content": "TDX allows advanced filtering using the following fields: Requestor (Search by name/StarID), Acct/Dept, Current Status (New, Open, In Process, etc.), Ticket Type, Form, Responsibility (Person or Group), Created Date Range, Start/Due Date, Location/Room, and Source (Phone, Email, etc.). You can also filter by Assets/CIs and 'Only Top-Level' tickets.",
+    "source": "Manual Entry"
+}
