@@ -14,6 +14,47 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderLinks();
   await loadDirectoryData();
   checkOllamaStatus();
+  
+  // File drag and drop upload
+  const chatContainer = document.querySelector('.chat-container');
+  chatContainer.addEventListener('dragover', e => {
+    e.preventDefault();
+    chatContainer.style.border = "2px dashed var(--primary)";
+    chatContainer.style.background = "rgba(30, 161, 242, 0.05)";
+  });
+  chatContainer.addEventListener('dragleave', e => {
+    e.preventDefault();
+    chatContainer.style.border = "none";
+    chatContainer.style.background = "var(--surface-color)";
+  });
+  chatContainer.addEventListener('drop', async e => {
+    e.preventDefault();
+    chatContainer.style.border = "none";
+    chatContainer.style.background = "var(--surface-color)";
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      appendMessage(`🧠 Uploading and analyzing ${file.name}...`, 'ai');
+      
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      try {
+        const res = await fetch('http://localhost:8000/api/kb/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+          appendMessage(`✅ **File Analyzed!** ${data.message}`, 'ai');
+        } else {
+          appendMessage(`Failed: ${data.message}`, 'ai');
+        }
+      } catch (err) {
+        appendMessage(`Upload Error: Backend might be down.`, 'ai');
+      }
+    }
+  });
 });
 
 async function loadDirectoryData() {
@@ -108,11 +149,30 @@ async function sendMessage() {
   if (matchedFaq) {
     lastMatchedFaq = matchedFaq;
     renderFaqResponse(matchedFaq);
-  } else if (lastMatchedFaq) {
-    // Context-aware fallback: assume they are continuing the previous topic
-    appendMessage(`Got it! Since we're still talking about **${lastMatchedFaq.service}**, make sure to add that detail ("*${text}*") into the TDX ticket **Description** field so the assigned team has all the context.`, 'ai');
   } else {
-    initiateQA(text);
+    // Search the Custom KB / Exported KB
+    try {
+      appendTyping(typingId);
+      const res = await fetch(`http://localhost:8000/api/kb/search?q=${encodeURIComponent(text)}`);
+      const data = await res.json();
+      removeTyping(typingId);
+      
+      if (data.status === "success" && data.data) {
+        if (data.data.source === "Self-Learned") {
+          appendMessage(`🧠 **From My Memory:**<br>${data.data.content}`, 'ai');
+        } else {
+          appendMessage(`📚 **Found in TDX KB: ${data.data.title}**<br>${data.data.content}`, 'ai');
+        }
+        return; // Success!
+      }
+    } catch (e) { removeTyping(typingId); }
+    
+    if (lastMatchedFaq) {
+      // Context-aware fallback: assume they are continuing the previous topic
+      appendMessage(`Got it! Since we're still talking about **${lastMatchedFaq.service}**, make sure to add that detail ("*${text}*") into the TDX ticket **Description** field so the assigned team has all the context.`, 'ai');
+    } else {
+      initiateQA(text);
+    }
   }
 }
 
@@ -180,6 +240,28 @@ function handleQA(text) {
 async function checkEnterpriseTools(text) {
   const lower = text.toLowerCase();
   
+  // Self-Learning Intent
+  if (lower.startsWith("learn this:") || lower.startsWith("remember this:")) {
+    const content = text.replace(/^learn this:/i, '').replace(/^remember this:/i, '').trim();
+    if (content.length < 3) return false;
+    
+    appendMessage(`🧠 Saving to permanent memory...`, 'ai');
+    try {
+      const res = await fetch(`http://localhost:8000/api/kb/learn`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: content })
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        appendMessage(`✅ **Learned!** I will remember this for next time.`, 'ai');
+      } else {
+        appendMessage(`Failed to learn: ${data.message}`, 'ai');
+      }
+    } catch (e) { appendMessage("Error connecting to Python backend server.", 'ai'); }
+    return true;
+  }
+  
   // AD Check Intent
   if (lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account")) {
     const words = lower.split(" ");
@@ -223,7 +305,17 @@ async function checkEnterpriseTools(text) {
     try {
       const res = await fetch(`http://localhost:8000/api/sccm/${device}`);
       const data = await res.json();
-      appendMessage(`**SCCM Status:** ${data.message}`, 'ai');
+      if (data.status === "success" && data.data) {
+        let html = `**SCCM Device Found:**<br>`;
+        html += `• **Name:** ${data.data.Name}<br>`;
+        html += `• **Last Logon:** ${data.data.LastLogonUserName || 'Unknown'}<br>`;
+        html += `• **IP Addresses:** ${(data.data.IPAddresses || []).join(', ')}<br>`;
+        html += `• **MAC Addresses:** ${(data.data.MACAddresses || []).join(', ')}<br>`;
+        html += `• **OS:** ${data.data.OperatingSystemNameandVersion || 'Unknown'}<br>`;
+        appendMessage(html, 'ai');
+      } else {
+        appendMessage(`SCCM Query Failed: ${data.message}`, 'ai');
+      }
     } catch (e) { appendMessage("Error connecting to Python backend server.", 'ai'); }
     return true;
   }
@@ -236,7 +328,19 @@ async function checkEnterpriseTools(text) {
     try {
       const res = await fetch(`http://localhost:8000/api/mist/${mac}`);
       const data = await res.json();
-      appendMessage(`**Mist Status:** ${data.message}`, 'ai');
+      if (data.status === "success" && data.data) {
+        let html = `**Juniper Mist Client Found:**<br>`;
+        html += `• **MAC:** ${data.data.MAC}<br>`;
+        html += `• **Hostname/Device:** ${data.data.Hostname || 'Unknown'} (${data.data.Device || 'Unknown'})<br>`;
+        html += `• **SSID:** ${data.data.SSID || 'Unknown'}<br>`;
+        html += `• **IP Address:** ${data.data.IP || 'Unknown'}<br>`;
+        html += `• **OS:** ${data.data.OS || 'Unknown'}<br>`;
+        html += `• **Auth/PSK:** ${data.data.PSK_Name || 'Unknown'}<br>`;
+        html += `• **Connection:** Band ${data.data.Band}, Protocol ${data.data.Protocol}<br>`;
+        appendMessage(html, 'ai');
+      } else {
+        appendMessage(`Mist Query Failed: ${data.message}`, 'ai');
+      }
     } catch (e) { appendMessage("Error connecting to Python backend server.", 'ai'); }
     return true;
   }

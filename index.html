@@ -8,6 +8,20 @@
 <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
+<!-- Login Overlay -->
+<div id="loginOverlay" class="login-overlay">
+  <div class="login-card">
+    <h2>🎓 TRC Enterprise AI</h2>
+    <p>Sign in with your StarID to continue</p>
+    <div class="login-input-group">
+      <input type="text" id="loginUser" placeholder="StarID / Username" autocomplete="off" />
+      <input type="password" id="loginPass" placeholder="Password" />
+    </div>
+    <button id="loginBtn" onclick="performLogin()">Sign In</button>
+    <div id="loginError" class="login-error"></div>
+  </div>
+</div>
+
 <div class="app">
   <!-- Sidebar -->
   <aside class="sidebar">
