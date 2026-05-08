@@ -159,7 +159,7 @@ With a TDX API token, the AI will:
 - **GitHub:** https://github.com/shadman1996/AI-For-TRC
 - **Local Path:** `OneDrive - Minnesota State\Desktop\Shadman Ahsan\TRC-AI-Assistant\`
 - **Launch:** Double-click `start_ai.bat`
-- **Access:** `http://localhost:8000` in any browser while the server is running
+- **Access:** `http://localhost:8001` in any browser while the server is running
 
 ---
 

@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       formData.append("file", file);
       
       try {
-        const res = await fetch('http://localhost:8000/api/kb/upload', {
+        const res = await fetch('http://localhost:8001/api/kb/upload', {
           method: 'POST',
           body: formData
         });
@@ -68,8 +68,11 @@ function switchView(viewId) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   
-  document.getElementById(`view-${viewId}`).classList.add('active');
-  document.querySelector(`[data-view="${viewId}"]`).classList.add('active');
+  const targetView = document.getElementById(`view-${viewId}`);
+  if (targetView) targetView.classList.add('active');
+  
+  const targetBtn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
+  if (targetBtn) targetBtn.classList.add('active');
 }
 
 // ----- CHAT & AI LOGIC -----
@@ -153,7 +156,7 @@ async function sendMessage() {
     // Search the Custom KB / Exported KB
     try {
       appendTyping(typingId);
-      const res = await fetch(`http://localhost:8000/api/kb/search?q=${encodeURIComponent(text)}`);
+      const res = await fetch(`http://localhost:8001/api/kb/search?q=${encodeURIComponent(text)}`);
       const data = await res.json();
       removeTyping(typingId);
       
@@ -247,7 +250,7 @@ async function checkEnterpriseTools(text) {
     
     appendMessage(`🧠 Saving to permanent memory...`, 'ai');
     try {
-      const res = await fetch(`http://localhost:8000/api/kb/learn`, {
+      const res = await fetch(`http://localhost:8001/api/kb/learn`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: content })
@@ -262,34 +265,52 @@ async function checkEnterpriseTools(text) {
     return true;
   }
   
-  // AD Check Intent
-  if (lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account")) {
-    const words = lower.split(" ");
-    let username = words[words.length - 1].replace(/[^a-zA-Z0-9-]/g, '');
+  // AD / StarID Check Intent
+  if (lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account") || lower.includes("check starid") || lower.includes("find starid")) {
+    let query = "";
+    const words = text.split(" ");
     
-    // Extract name safely
-    const forIndex = words.findIndex(w => w === 'for');
-    if (forIndex !== -1 && forIndex < words.length - 1) {
-      username = words[forIndex + 1].replace(/[^a-zA-Z0-9-]/g, '');
+    // Extract everything after "for", "check ad", etc.
+    const markers = ["for", "check ad", "is locked", "active directory", "ad account", "check starid", "find starid"];
+    let bestMarkerIndex = -1;
+    
+    for (const marker of markers) {
+      const idx = lower.indexOf(marker);
+      if (idx !== -1 && idx + marker.length > bestMarkerIndex) {
+        bestMarkerIndex = idx + marker.length;
+      }
     }
     
-    if (username.length < 3) return false;
+    if (bestMarkerIndex !== -1) {
+      query = text.substring(bestMarkerIndex).trim().replace(/[^a-zA-Z0-9\s.-]/g, '');
+    } else {
+      query = words[words.length - 1].replace(/[^a-zA-Z0-9-]/g, '');
+    }
     
-    appendMessage(`🤖 Connecting to Active Directory for user: **${username}**...`, 'ai');
+    if (query.length < 2) return false;
+    
+    appendMessage(`🤖 Searching AD/StarID for: **${query}**...`, 'ai');
     
     try {
-      const res = await fetch(`http://localhost:8000/api/ad/${username}`);
+      const res = await fetch(`http://localhost:8001/api/ad/${encodeURIComponent(query)}`);
       const data = await res.json();
       
-      if (data.status === "success") {
-        let html = `**Active Directory Results:**<br>`;
-        html += `• **Name:** ${data.data.DisplayName || 'N/A'}<br>`;
-        html += `• **Title:** ${data.data.Title || 'N/A'}<br>`;
-        html += `• **Department:** ${data.data.Department || 'N/A'}<br>`;
-        html += `• **Account Locked:** ${data.data.IsLocked ? '<span style="color:#ef4444;font-weight:bold;">⚠️ YES</span>' : '<span style="color:#22c55e;font-weight:bold;">✅ NO</span>'}<br>`;
+      if (data.status === "success" && data.data) {
+        let html = `**Found ${data.data.length} match(es):**<br><br>`;
+        
+        data.data.forEach((user, idx) => {
+          html += `<div style="border-left: 3px solid var(--primary); padding-left: 10px; margin-bottom: 15px;">`;
+          html += `• **StarID:** <span style="color:var(--primary); font-weight:bold;">${user.StarID || 'N/A'}</span><br>`;
+          html += `• **Name:** ${user.DisplayName || 'N/A'}<br>`;
+          html += `• **Title:** ${user.Title || 'N/A'}<br>`;
+          html += `• **Dept:** ${user.Department || 'N/A'}<br>`;
+          html += `• **Locked:** ${user.IsLocked ? '<span style="color:#ef4444;font-weight:bold;">⚠️ YES</span>' : '<span style="color:#22c55e;font-weight:bold;">✅ NO</span>'}<br>`;
+          html += `</div>`;
+        });
+        
         appendMessage(html, 'ai');
       } else {
-        appendMessage(`AD Query Failed: ${data.message}`, 'ai');
+        appendMessage(`Search Failed: ${data.message}`, 'ai');
       }
     } catch (e) {
       appendMessage(`Error connecting to Enterprise API. Is the Python backend running?`, 'ai');
@@ -303,7 +324,7 @@ async function checkEnterpriseTools(text) {
     const device = words[words.length - 1];
     appendMessage(`🤖 Querying SCCM Database for device: **${device}**...`, 'ai');
     try {
-      const res = await fetch(`http://localhost:8000/api/sccm/${device}`);
+      const res = await fetch(`http://localhost:8001/api/sccm/${device}`);
       const data = await res.json();
       if (data.status === "success" && data.data) {
         let html = `**SCCM Device Found:**<br>`;
@@ -326,7 +347,7 @@ async function checkEnterpriseTools(text) {
     const mac = words[words.length - 1];
     appendMessage(`🤖 Querying Juniper Mist for client: **${mac}**...`, 'ai');
     try {
-      const res = await fetch(`http://localhost:8000/api/mist/${mac}`);
+      const res = await fetch(`http://localhost:8001/api/mist/${mac}`);
       const data = await res.json();
       if (data.status === "success" && data.data) {
         let html = `**Juniper Mist Client Found:**<br>`;
@@ -693,3 +714,147 @@ function renderLinks() {
   
   container.innerHTML = html;
 }
+
+// ----- AUTHENTICATION LOGIC -----
+let currentUser = null;
+
+async function performLogin() {
+  const user = document.getElementById('loginUser').value.trim();
+  const pass = document.getElementById('loginPass').value.trim();
+  const btn = document.getElementById('loginBtn');
+  const errorDiv = document.getElementById('loginError');
+  
+  if (!user || !pass) {
+    errorDiv.innerText = "Please enter both StarID and Password.";
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.innerText = "Signing in...";
+  errorDiv.innerText = "";
+  
+  try {
+    const res = await fetch('http://localhost:8001/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    
+    const data = await res.json();
+    if (data.status === "success") {
+      currentUser = {
+        token: data.token,
+        role: data.role,
+        username: data.username
+      };
+      localStorage.setItem('trc_session', JSON.stringify(currentUser));
+      document.getElementById('loginOverlay').classList.add('hidden');
+      const appDiv = document.querySelector('.app');
+      if (appDiv) appDiv.style.display = 'flex'; updateProfileUI();
+      appendMessage(`✅ **Welcome, ${data.username}!** You are logged in as **${data.role.toUpperCase()}**. How can I help you today?`, 'ai');
+    } else {
+      errorDiv.innerText = data.message || "Login failed.";
+    }
+  } catch (e) {
+    errorDiv.innerText = "Error connecting to Auth server.";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Sign In";
+  }
+}
+
+function checkSession() {
+  const session = localStorage.getItem('trc_session');
+  if (session) {
+    currentUser = JSON.parse(session);
+    document.getElementById('loginOverlay').classList.add('hidden');
+    const appDiv = document.querySelector('.app');
+    if (appDiv) appDiv.style.display = 'flex'; updateProfileUI();
+  }
+}
+
+// Handle Enter key for login
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !document.getElementById('loginOverlay').classList.contains('hidden')) {
+    performLogin();
+  }
+});
+
+window.addEventListener('load', checkSession);
+
+// ----- NEW AUTH & ADMIN LOGIC -----
+
+function toggleUserMenu() {
+  document.getElementById('userMenu').classList.toggle('hidden');
+}
+
+function performLogout() {
+  localStorage.removeItem('trc_session');
+  currentUser = null;
+  location.reload(); // Hard reset to login screen
+}
+
+async function updateProfileUI() {
+  if (!currentUser) return;
+  document.getElementById('headerUserName').innerText = currentUser.username;
+  document.getElementById('headerUserRole').innerText = currentUser.role.toUpperCase();
+  
+  // Show admin button if sysadmin
+  if (currentUser.role === 'sysadmin' || currentUser.role === 'wag') {
+    document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+    loadAdminUsers();
+  } else {
+    document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+  }
+}
+
+async function loadAdminUsers() {
+  try {
+    const res = await fetch('http://localhost:8001/api/admin/users');
+    const data = await res.json();
+    if (data.status === 'success') {
+      renderAdminList(data.roles);
+    }
+  } catch (e) { console.error(\"Failed to load admin users\", e); }
+}
+
+function renderAdminList(roles) {
+  const container = document.getElementById('adminUserList');
+  let html = '';
+  for (const [user, role] of Object.entries(roles)) {
+    html += \
+      <div class=\"admin-user-item\">
+        <div class=\"admin-user-info\">
+          <span class=\"admin-user-id\">\</span>
+          <span class=\"admin-user-role\">\</span>
+        </div>
+        <button onclick=\"deleteUser('\')\" style=\"background:none; border:none; color:var(--red); cursor:pointer;\">???</button>
+      </div>
+    \;
+  }
+  container.innerHTML = html || '<p style=\"font-size:12px; color:var(--text2);\">No custom roles defined yet.</p>';
+}
+
+async function adminAddUser() {
+  const username = document.getElementById('newUserId').value.trim();
+  const role = document.getElementById('newUserRole').value;
+  if (!username) return;
+  
+  try {
+    await fetch('http://localhost:8001/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, role })
+    });
+    document.getElementById('newUserId').value = '';
+    loadAdminUsers();
+    appendMessage(\"? User **\" + username + \"** assigned to role **\" + role.toUpperCase() + \"**.\", 'ai');
+  } catch (e) { alert(\"Failed to update user\"); }
+}
+
+// Close menu if clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.user-profile')) {
+    document.getElementById('userMenu').classList.add('hidden');
+  }
+});

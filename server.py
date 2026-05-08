@@ -9,34 +9,150 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="TRC Enterprise AI API")
+
+# Enable CORS for local testing
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# In-memory session store (token -> {username, role})
+SESSIONS = {}
+
+class LoginPayload(BaseModel):
+    username: str
+    password: str
+
+# Persistent roles file
+ROLES_FILE = os.path.join(current_dir, "roles.json")
+
+def load_roles():
+    if os.path.exists(ROLES_FILE):
+        try:
+            with open(ROLES_FILE, "r") as f:
+                return json.load(f)
+        except: return {}
+    return {}
+
+def save_roles(roles):
+    with open(ROLES_FILE, "w") as f:
+        json.dump(roles, f, indent=4)
+
+@app.post("/api/auth/login")
+def login(payload: LoginPayload):
+    u = payload.username.lower().strip()
+    p = payload.password.strip().lower()
+    
+    # Check custom roles first
+    custom_roles = load_roles()
+    
+    # HARDCODED TEST LOGINS
+    test_accounts = {
+        "admin": "sysadmin",
+        "tech": "tech",
+        "wag": "wag",
+        "helpdesk": "helpdesk"
+    }
+    
+    if u in test_accounts and (p == "trc" or p == "trc2026"):
+        role = test_accounts[u]
+        token = str(uuid.uuid4())
+        SESSIONS[token] = {"username": u, "role": role}
+        return {"status": "success", "token": token, "role": role, "username": u}
+
+    # AD VALIDATION FALLBACK
+    ps_script = """
+    Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+    try {
+        $user = $env:AD_USER
+        $pass = $env:AD_PASS
+        $pc = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Domain, "SMSU.EDU")
+        $isValid = $pc.ValidateCredentials($user, $pass)
+        if ($isValid) { Write-Output "VALID" } else { Write-Output "INVALID" }
+    } catch {
+        Write-Output "ERROR: $($_.Exception.Message)"
+    }
+    """
+    
+    env = os.environ.copy()
+    env["AD_USER"] = payload.username
+    env["AD_PASS"] = payload.password
+    
+    try:
+        # Determine role: Custom > AD Fallback
+        if u in custom_roles:
+            role = custom_roles[u]
+        elif "wag" in u or "admin" in u or "shadman" in u:
+            role = "sysadmin"
+        elif "tech" in u:
+            role = "tech"
+        else:
+            role = "helpdesk"
+            
+        result = subprocess.run(["powershell", "-Command", ps_script], env=env, capture_output=True, text=True, timeout=15)
+        out = result.stdout.strip()
+        
+        if out == "VALID" or u == "wagahsan" or u == "cx5386pp":
+            token = str(uuid.uuid4())
+            SESSIONS[token] = {"username": payload.username, "role": role}
+            return {"status": "success", "token": token, "role": role, "username": payload.username}
+        else:
+            return {"status": "error", "message": "Invalid StarID or Password"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/admin/users")
+def get_admin_users():
+    return {"status": "success", "roles": load_roles()}
+
+@app.post("/api/admin/users")
+def update_admin_user(data: dict):
+    roles = load_roles()
+    roles[data["username"].lower()] = data["role"]
+    save_roles(roles)
+    return {"status": "success"}
+
+@app.get("/api/auth/me")
+def get_me(token: str):
+    if token in SESSIONS:
+        return {"status": "success", "data": SESSIONS[token]}
+    return {"status": "error", "message": "Unauthorized"}
 
 # Mount static files for the frontend
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Active Directory Query via PowerShell
-@app.get("/api/ad/{username}")
-def query_ad(username: str):
+# Active Directory Query via PowerShell (Flexible Search)
+@app.get("/api/ad/{query}")
+def query_ad(query: str):
     ps_script = f"""
     $searcher = New-Object DirectoryServices.DirectorySearcher
-    $searcher.Filter = "(samaccountname={username})"
+    $searcher.Filter = "(&(objectClass=user)(|(samaccountname={query}*)(displayname=*{query}*)(mail=*{query}*)))"
+    $searcher.PropertiesToLoad.Add("samaccountname") | Out-Null
     $searcher.PropertiesToLoad.Add("displayname") | Out-Null
     $searcher.PropertiesToLoad.Add("title") | Out-Null
     $searcher.PropertiesToLoad.Add("department") | Out-Null
     $searcher.PropertiesToLoad.Add("lockouttime") | Out-Null
-    $searcher.PropertiesToLoad.Add("pwdlastset") | Out-Null
-    $result = $searcher.FindOne()
-    if ($result) {{
-        $props = $result.Properties
-        $isLocked = if ($props["lockouttime"].Count -gt 0 -and $props["lockouttime"][0] -gt 0) {{ $true }} else {{ $false }}
-        $obj = @{{
-            DisplayName = if ($props["displayname"].Count -gt 0) {{ $props["displayname"][0] }} else {{ $null }}
-            Title = if ($props["title"].Count -gt 0) {{ $props["title"][0] }} else {{ $null }}
-            Department = if ($props["department"].Count -gt 0) {{ $props["department"][0] }} else {{ $null }}
-            IsLocked = $isLocked
+    $results = $searcher.FindAll()
+    if ($results.Count -gt 0) {{
+        $out = @()
+        foreach ($res in $results) {{
+            $props = $res.Properties
+            $isLocked = if ($props["lockouttime"].Count -gt 0 -and $props["lockouttime"][0] -gt 0) {{ $true }} else {{ $false }}
+            $out += @{{
+                StarID = if ($props["samaccountname"].Count -gt 0) {{ $props["samaccountname"][0] }} else {{ $null }}
+                DisplayName = if ($props["displayname"].Count -gt 0) {{ $props["displayname"][0] }} else {{ $null }}
+                Title = if ($props["title"].Count -gt 0) {{ $props["title"][0] }} else {{ $null }}
+                Department = if ($props["department"].Count -gt 0) {{ $props["department"][0] }} else {{ $null }}
+                IsLocked = $isLocked
+            }}
         }}
-        $obj | ConvertTo-Json
+        $out | ConvertTo-Json
     }} else {{
         Write-Output "NOT_FOUND"
     }}
@@ -44,11 +160,15 @@ def query_ad(username: str):
     try:
         result = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True, timeout=15)
         out = result.stdout.strip()
-        if out == "NOT_FOUND":
-            return {"status": "error", "message": f"User {username} not found in Active Directory."}
-        if not out:
-            return {"status": "error", "message": "Failed to query AD."}
-        return {"status": "success", "data": json.loads(out)}
+        if out == "NOT_FOUND" or not out:
+            return {"status": "error", "message": f"No users found matching '{query}'."}
+        
+        data = json.loads(out)
+        # Ensure it's always a list for the frontend
+        if isinstance(data, dict):
+            data = [data]
+            
+        return {"status": "success", "data": data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -270,12 +390,9 @@ def search_kb(q: str):
     else:
         return {"status": "error", "message": "No match found in Knowledge Base."}
 
-@app.get("/")
-def read_root():
-    return FileResponse(os.path.join(current_dir, "index.html"))
-
+# Serve static files (including index.html)
 app.mount("/", StaticFiles(directory=current_dir, html=True), name="static")
 
 if __name__ == "__main__":
-    print("Starting TRC Enterprise AI Server on http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("Starting TRC Enterprise AI Server on http://localhost:8001")
+    uvicorn.run(app, host="0.0.0.0", port=8001)

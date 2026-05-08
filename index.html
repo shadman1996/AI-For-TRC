@@ -22,7 +22,7 @@
   </div>
 </div>
 
-<div class="app">
+<div class="app" style="display: none;">
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="sidebar-logo">
@@ -45,6 +45,9 @@
       <button class="nav-btn" data-view="links" onclick="switchView('links')">
         <span>🔗</span> Quick Links
       </button>
+      <button class="nav-btn admin-only hidden" data-view="settings" onclick="switchView('settings')">
+        <span>⚙️</span> Admin Panel
+      </button>
     </nav>
     <div class="sidebar-status">
       <div class="status-dot" id="aiStatus"></div>
@@ -54,6 +57,21 @@
 
   <!-- Main Content -->
   <main class="main">
+    <header class="top-bar">
+      <div class="top-search"></div>
+      <div class="user-profile">
+        <div class="user-info">
+          <span id="headerUserName">Guest</span>
+          <span id="headerUserRole" class="role-badge">Help Desk</span>
+        </div>
+        <div class="user-avatar" onclick="toggleUserMenu()">👤</div>
+        <div id="userMenu" class="user-menu hidden">
+          <button onclick="switchView('settings')">⚙️ Admin Settings</button>
+          <div class="menu-divider"></div>
+          <button onclick="performLogout()" style="color: var(--red);">🚪 Log Out</button>
+        </div>
+      </div>
+    </header>
 
     <!-- CHAT VIEW -->
     <section class="view active" id="view-chat">
@@ -113,6 +131,33 @@
         <p>All your daily TRC tools in one place.</p>
       </div>
       <div class="links-grid" id="linksGrid"></div>
+    </section>
+
+    <!-- SETTINGS / ADMIN VIEW -->
+    <section class="view" id="view-settings">
+      <div class="view-header">
+        <h1>Admin Panel</h1>
+        <p>Manage user roles and system configuration</p>
+      </div>
+      <div class="settings-container">
+        <div class="settings-card">
+          <h3>User Role Management</h3>
+          <p>Assign roles to StarIDs to control access levels.</p>
+          <div class="admin-user-list" id="adminUserList">
+            <!-- Populated by JS -->
+          </div>
+          <div class="admin-add-user">
+            <input type="text" id="newUserId" placeholder="StarID" />
+            <select id="newUserRole">
+              <option value="helpdesk">Help Desk</option>
+              <option value="tech">Tech</option>
+              <option value="wag">WAG</option>
+              <option value="sysadmin">System Admin</option>
+            </select>
+            <button class="btn-primary" onclick="adminAddUser()" style="background:var(--accent); color:white; border:none; padding:8px 16px; border-radius:8px; cursor:pointer;">Add User</button>
+          </div>
+        </div>
+      </div>
     </section>
 
   </main>

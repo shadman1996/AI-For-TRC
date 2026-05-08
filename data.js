@@ -255,7 +255,8 @@ const QUICK_LINKS = [
   { name:"Perceptive Content", url:"https://ecm.mnsu.edu/experience/#login", icon:"📄", category:"Software" },
   { name:"MoveIt Securely", url:"https://securefileshare.minnstate.edu/", icon:"📁", category:"File Sharing" },
   { name:"MinnState Employee Hub", url:"https://hub.selfservice.systems.state.mn.us/", icon:"👤", category:"Identity" },
-  { name:"Knowledge Base", url:"https://services.smsu.edu/TDClient/180/Portal/KB/?CategoryID=789", icon:"📚", category:"Ticketing" }
+  { name:"Knowledge Base", url:"https://services.smsu.edu/TDClient/180/Portal/KB/?CategoryID=789", icon:"📚", category:"Ticketing" },
+  { name:"TRC Network Drive", url:"file://itsfs/TRC", icon:"📂", category:"File Sharing" }
 ];
 
 const TDX_FORM_FIELDS = [
