@@ -265,26 +265,25 @@ async function checkEnterpriseTools(text) {
     return true;
   }
   
-  // AD / StarID Check Intent
-  if (lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account") || lower.includes("check starid") || lower.includes("find starid")) {
+  // Auto-Detect StarID or Search Intent (Find, Who is, Lookup)
+  const starIdMatch = text.match(/\b[a-z]{2}[0-9]{4}[a-z]{2}\b/i);
+  const isSearchIntent = lower.startsWith("find ") || lower.startsWith("who is ") || lower.startsWith("lookup ") || lower.startsWith("search ");
+  
+  if (starIdMatch || isSearchIntent || lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account") || lower.includes("check starid") || lower.includes("find starid")) {
     let query = "";
-    const words = text.split(" ");
     
-    // Extract everything after "for", "check ad", etc.
-    const markers = ["for", "check ad", "is locked", "active directory", "ad account", "check starid", "find starid"];
-    let bestMarkerIndex = -1;
-    
-    for (const marker of markers) {
-      const idx = lower.indexOf(marker);
-      if (idx !== -1 && idx + marker.length > bestMarkerIndex) {
-        bestMarkerIndex = idx + marker.length;
-      }
-    }
-    
-    if (bestMarkerIndex !== -1) {
-      query = text.substring(bestMarkerIndex).trim().replace(/[^a-zA-Z0-9\s.-]/g, '');
+    if (starIdMatch) {
+      query = starIdMatch[0];
     } else {
-      query = words[words.length - 1].replace(/[^a-zA-Z0-9-]/g, '');
+      const markers = ["for", "find", "who is", "lookup", "search", "check ad", "is locked", "active directory", "ad account", "check starid", "find starid"];
+      let bestMarkerIndex = -1;
+      for (const marker of markers) {
+        const idx = lower.indexOf(marker);
+        if (idx !== -1 && idx + marker.length > bestMarkerIndex) {
+          bestMarkerIndex = idx + marker.length;
+        }
+      }
+      query = text.substring(bestMarkerIndex).trim().replace(/[^a-zA-Z0-9\s.-]/g, '');
     }
     
     if (query.length < 2) return false;
