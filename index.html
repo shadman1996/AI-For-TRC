@@ -193,7 +193,13 @@
             <div class="placeholder-icon">🗺️</div>
             <h3>Select a floor plan to view</h3>
           </div>
-          <iframe id="pdfViewer" src="" class="hidden" style="width:100%; height:100%; border:none;"></iframe>
+          <div id="pdfViewerContainer" class="hidden" style="width:100%; height:100%; display: flex; flex-direction: column;">
+            <div style="padding: 10px; background: rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center;">
+              <span id="currentMapName" style="font-weight: 500;">Map Viewer</span>
+              <button id="btnOpenMapNewTab" class="btn-primary" style="padding: 6px 12px; font-size: 12px; cursor: pointer;">↗️ Open in New Tab</button>
+            </div>
+            <iframe id="pdfViewer" src="" style="width:100%; flex: 1; border:none;"></iframe>
+          </div>
         </div>
       </div>
     </section>
@@ -226,15 +232,20 @@
           <div class="admin-user-list" id="adminUserList">
             <!-- Populated by JS -->
           </div>
-          <div class="admin-add-user">
-            <input type="text" id="newUserId" placeholder="StarID" />
-            <select id="newUserRole">
-              <option value="helpdesk">Help Desk</option>
-              <option value="tech">Tech</option>
-              <option value="wag">WAG</option>
-              <option value="sysadmin">System Admin</option>
-            </select>
-            <button class="btn-primary" onclick="adminAddUser()" style="background:var(--accent); color:white; border:none; padding:8px 16px; border-radius:8px; cursor:pointer;">Add User</button>
+          <div class="admin-add-user" style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; gap: 10px; width: 100%;">
+              <input type="text" id="newUserId" placeholder="StarID" style="flex: 1;" />
+              <select id="newUserRole" onchange="updateModuleCheckboxes()">
+                <option value="helpdesk">Help Desk</option>
+                <option value="tech">Tech</option>
+                <option value="wag">WAG</option>
+                <option value="sysadmin">System Admin</option>
+              </select>
+              <button class="btn-primary" onclick="adminAddUser()" style="background:var(--accent); color:white; border:none; padding:8px 16px; border-radius:8px; cursor:pointer;">Save User</button>
+            </div>
+            <div id="moduleCheckboxes" class="module-checkboxes" style="display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+               <!-- Populated by JS -->
+            </div>
           </div>
         </div>
       </div>

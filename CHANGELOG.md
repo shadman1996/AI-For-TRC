@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.0.0] - 2026-05-11 (Current)
+## [3.1.0] - 2026-05-11 (Current)
+### Added
+- **Granular Module Permissions**: Added module-level checkbox controls in the Admin Panel for highly customizable user access.
+- **Network Map Viewer**: Enhanced PDF map renderer to handle file paths over the local network and added a reliable "Open in New Tab" fallback mechanism.
+- **Resilient Authentication**: Upgraded AD authentication fallback logic with graceful timeouts and clear offline error messages.
+
+## [3.0.0] - 2026-05-11
 ### Added
 - **SQLite Migration**: Moved from flat JSON files to a robust SQLite database to support concurrent users and high-scale campus deployment.
 - **Network Deployment Toolkit**: Added `setup_firewall.bat` for one-click network accessibility.

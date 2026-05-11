@@ -44,6 +44,11 @@ To make the assistant available to other TRC staff on the campus network:
 3. **Connect**: Colleagues can connect using your LAN IP (e.g., `http://10.x.x.x:8001`).
    - Find your Live URL in the **Admin Panel > Deployment Dashboard**.
 
+### 🏢 Future Production Deployment (SMSU Server)
+Currently, the application is designed to run locally on a primary PC with network sharing. A planned future update involves migrating the `FastAPI` server and `Ollama` engine to a dedicated **SMSU Server**.
+- **Why?** Moving to a central university server will allow the use of larger, more powerful LLM models (e.g., Llama 3 8B or 70B) for significantly faster inference times and smarter reasoning, without stressing local student worker PCs.
+- **Impact:** The frontend will remain identical, but `config.json` will be updated to point the API endpoints to the central server.
+
 ## 📄 Documentation
 
 - [Project Summary](TRC_AI_Project_Summary.md): Detailed business value and roadmap.

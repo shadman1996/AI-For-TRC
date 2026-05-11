@@ -8,12 +8,13 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import secrets
 from datetime import datetime, timedelta
 import database
 import socket
+import urllib.parse
 
 # Initialize Database
 database.init_db()
@@ -152,8 +153,13 @@ def login(payload: LoginPayload):
         else:
             role = "helpdesk"
             
-        result = subprocess.run(["powershell", "-Command", ps_script], env=env, capture_output=True, text=True, timeout=15)
-        out = result.stdout.strip()
+        try:
+            result = subprocess.run(["powershell", "-Command", ps_script], env=env, capture_output=True, text=True, timeout=10)
+            out = result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            out = "TIMEOUT"
+        except Exception as e:
+            out = f"ERROR: {str(e)}"
         
         if out == "VALID" or u == "wagahsan" or u == "cx5386pp":
             token = str(uuid.uuid4())
@@ -162,10 +168,12 @@ def login(payload: LoginPayload):
                 
             SESSIONS[token] = {"username": payload.username, "role": role, "modules": modules}
             return {"status": "success", "token": token, "role": role, "username": payload.username, "modules": modules}
+        elif out == "TIMEOUT" or "ERROR" in out:
+            return {"status": "error", "message": "Network or Active Directory is unreachable. Use the offline password (trc) to login locally."}
         else:
             return {"status": "error", "message": "Invalid StarID or Password"}
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {"status": "error", "message": "An unexpected error occurred during login."}
 
 @app.get("/api/admin/users")
 def get_admin_users():
@@ -496,7 +504,7 @@ def list_wayfinding():
                 "file": f,
                 "building": building,
                 "floor": floor,
-                "url": f"/floorplans/{f}"
+                "url": f"/floorplans/{urllib.parse.quote(f)}"
             })
             
     return {"status": "success", "data": structured}
@@ -566,6 +574,35 @@ def ai_proxy_generate(data: dict):
     prompt = data.get("prompt", "")
     response = AIAdapter.generate(prompt)
     return {"status": "success", "response": response}
+
+@app.post("/api/ai/stream")
+async def ai_proxy_stream(data: dict):
+    prompt = data.get("prompt", "")
+    engine = CONFIG.get("ai_engine", {})
+    
+    if engine.get("provider") != "ollama":
+        return {"status": "error", "message": "Streaming only supported for Ollama provider currently."}
+
+    def generate():
+        try:
+            res = requests.post(engine["endpoint"], json={
+                "model": engine["model"],
+                "prompt": prompt,
+                "stream": True,
+                "options": {"temperature": 0.3}
+            }, stream=True, timeout=30)
+            
+            for line in res.iter_lines():
+                if line:
+                    chunk = json.loads(line.decode("utf-8"))
+                    if "response" in chunk:
+                        yield chunk["response"]
+                    if chunk.get("done"):
+                        break
+        except Exception as e:
+            yield f"\n[Error: {str(e)}]"
+
+    return StreamingResponse(generate(), media_type="text/plain")
 
 @app.post("/api/ai/directions")
 def ai_directions(data: dict):

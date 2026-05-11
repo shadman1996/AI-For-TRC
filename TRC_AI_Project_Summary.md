@@ -124,11 +124,11 @@ With a TDX API token, the AI will:
 - **Auto-Drafting**: Generate professional escalation notes and resolution summaries.
 - **Shift Handoffs**: Produce automated reports for incoming staff so no context is lost.
 
-### Phase 4 — Full Operations Hub
+### Phase 4 — Full Operations Hub & Server Migration
+- **SMSU Server Deployment**: Migrate the backend and AI models to a dedicated SMSU server. This will enable the use of larger, faster LLM models (e.g., Llama 3) for greater accuracy and speed, removing the processing burden from local student worker PCs.
 - SLA and deadline alerts for aging tickets
 - Resolution suggestions based on similar historical tickets
 - Shift logs and audit trails
-- Campus server deployment (multiple staff can connect from any campus PC)
 
 ---
 

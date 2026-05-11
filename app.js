@@ -235,6 +235,10 @@ async function sendMessage() {
       }
     } catch (e) { removeTyping(typingId); }
     
+    // If still no match, use the AI Stream for a general answer
+    appendTyping(typingId);
+    await streamAIResponse(text, typingId);
+    
     if (lastMatchedFaq) {
       // Context-aware fallback: assume they are continuing the previous topic
       appendMessage(`Got it! Since we're still talking about **${lastMatchedFaq.service}**, make sure to add that detail ("*${text}*") into the TDX ticket **Description** field so the assigned team has all the context.`, 'ai');
@@ -535,6 +539,57 @@ function getKeywordPrediction(text) {
   }
   
   return maxScore > 0 ? bestMatch : null;
+}
+
+  return null;
+}
+
+async function streamAIResponse(query, typingId) {
+  const container = document.getElementById('chatMessages');
+  
+  // Create the streaming message bubble
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'msg ai';
+  msgDiv.innerHTML = `
+    <div class="msg-avatar">🤖</div>
+    <div class="msg-bubble" id="streaming-${typingId}"></div>
+  `;
+  
+  removeTyping(typingId);
+  container.appendChild(msgDiv);
+  const bubble = document.getElementById(`streaming-${typingId}`);
+  
+  try {
+    const response = await fetch('/api/ai/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: query })
+    });
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      
+      const chunk = decoder.decode(value, { stream: true });
+      text += chunk;
+      bubble.innerHTML = text.replace(/\n/g, '<br>');
+      container.scrollTop = container.scrollHeight;
+    }
+    
+    // Check if the AI response suggests a specific category we know about
+    const lowerText = text.toLowerCase();
+    const match = FAQ_DATA.find(f => lowerText.includes(f.service.toLowerCase()));
+    if (match) {
+        bubble.innerHTML += `<br><br><button class="ai-cmd-btn" onclick="renderFaqResponse(${JSON.stringify(match).replace(/"/g, '&quot;')})">📖 View Official Procedure: ${match.service}</button>`;
+    }
+    
+  } catch (err) {
+    bubble.innerText = "Connection lost. Please check if the TRC server and Ollama are running.";
+  }
 }
 
 async function getAIPrediction(text) {
@@ -1062,14 +1117,22 @@ function filterMaps() {
 function showMap(map) {
   document.querySelectorAll('.map-item').forEach(i => i.classList.remove('active'));
   // Find the clicked item (brute force for mock)
-  event.currentTarget.classList.add('active');
+  if (event) {
+    event.currentTarget.classList.add('active');
+  }
   
   const placeholder = document.getElementById('mapPlaceholder');
+  const viewerContainer = document.getElementById('pdfViewerContainer');
   const viewer = document.getElementById('pdfViewer');
+  const title = document.getElementById('currentMapName');
+  const btn = document.getElementById('btnOpenMapNewTab');
   
   placeholder.classList.add('hidden');
-  viewer.classList.remove('hidden');
+  viewerContainer.classList.remove('hidden');
+  
+  title.innerText = `${map.building} - ${map.floor} Floor`;
   viewer.src = map.url;
+  btn.onclick = () => window.open(map.url, '_blank');
 }
 
 // ----- LINKS LOGIC -----
@@ -1461,12 +1524,22 @@ async function updateProfileUI() {
   }
 }
 
+let SYS_CONFIG = null;
+
 async function loadAdminUsers() {
   try {
+    if (!SYS_CONFIG) {
+      const configRes = await fetch('/api/config');
+      const configData = await configRes.json();
+      if (configData.status === 'success') {
+        SYS_CONFIG = configData.config;
+      }
+    }
     const res = await fetch('/api/admin/users');
     const data = await res.json();
     if (data.status === 'success') {
       renderAdminList(data.roles);
+      updateModuleCheckboxes(); // Initialize checkboxes for the default role selected
     }
   } catch (e) { console.error("Failed to load admin users", e); }
 }
@@ -1478,12 +1551,15 @@ function renderAdminList(roles) {
   
   entries.forEach(([user, data]) => {
     const roleName = typeof data === 'string' ? data : (data.role || 'unknown');
+    const modules = data.modules ? data.modules.join(', ') : 'Default';
     html += `
       <div class="admin-user-item">
         <div class="admin-user-info">
           <span class="admin-user-id">${user}</span>
           <span class="admin-user-role">${roleName.toUpperCase()}</span>
+          <div style="font-size: 10px; color: var(--text2); margin-top: 4px;">Modules: ${modules}</div>
         </div>
+        <button onclick="editUser('${user}', '${roleName}', '${data.modules ? data.modules.join(',') : ''}')" style="background:none; border:none; color:var(--accent); cursor:pointer; font-size:16px; margin-right: 10px;">✏️</button>
         <button onclick="deleteUser('${user}')" style="background:none; border:none; color:var(--red); cursor:pointer; font-size:16px;">✕</button>
       </div>
     `;
@@ -1492,6 +1568,33 @@ function renderAdminList(roles) {
   // Add a summary counter
   const summaryHtml = `<p style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Total Managed Users: ${entries.length}</p>`;
   container.innerHTML = summaryHtml + (html || '<p style="font-size:12px; color:var(--text2);">No custom roles defined yet.</p>');
+}
+
+function updateModuleCheckboxes(selectedModules = null) {
+  if (!SYS_CONFIG || !SYS_CONFIG.modules) return;
+  
+  const container = document.getElementById('moduleCheckboxes');
+  const role = document.getElementById('newUserRole').value;
+  
+  let checkedModules = [];
+  if (selectedModules) {
+    checkedModules = selectedModules.split(',').filter(m => m);
+  } else if (SYS_CONFIG.default_module_permissions && SYS_CONFIG.default_module_permissions[role]) {
+    checkedModules = SYS_CONFIG.default_module_permissions[role];
+  }
+  
+  container.innerHTML = SYS_CONFIG.modules.map(mod => `
+    <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer;">
+      <input type="checkbox" class="admin-module-cb" value="${mod.id}" ${checkedModules.includes(mod.id) ? 'checked' : ''} />
+      ${mod.icon} ${mod.name}
+    </label>
+  `).join('');
+}
+
+function editUser(user, role, modules) {
+  document.getElementById('newUserId').value = user;
+  document.getElementById('newUserRole').value = role;
+  updateModuleCheckboxes(modules);
 }
 
 async function deleteUser(username) {
@@ -1512,17 +1615,21 @@ async function deleteUser(username) {
 async function adminAddUser() {
   const username = document.getElementById('newUserId').value.trim();
   const role = document.getElementById('newUserRole').value;
+  
+  const checkboxes = document.querySelectorAll('.admin-module-cb');
+  const modules = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+  
   if (!username) return;
   
   try {
     await fetch('/api/admin/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, role })
+      body: JSON.stringify({ username, role, modules })
     });
     document.getElementById('newUserId').value = '';
     loadAdminUsers();
-    appendMessage(`👤 User **${username}** assigned to role **${role.toUpperCase()}**.`, 'ai');
+    appendMessage(`👤 User **${username}** assigned to role **${role.toUpperCase()}** with custom modules.`, 'ai');
   } catch (e) { alert("Failed to update user"); }
 }
 
