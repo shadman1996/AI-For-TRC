@@ -1,61 +1,82 @@
-// State management
+let SYSTEM_MODULES = [];
+let USER_MODULES = JSON.parse(localStorage.getItem('trc_modules')) || [];
 let currentView = 'chat';
-let isAIReady = false;
-let directoryData = [];
-let lastMatchedFaq = null;
-let qaState = null; // Tracks active QA sessions
-let learnedKeywords = JSON.parse(localStorage.getItem('learnedKeywords')) || {};
+let userCurrentLocation = "the Technology Resource Center (TRC) in Bellows Academic (BA)";
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
+  await fetchConfig();
   renderFAQGrid();
   renderFilters();
   renderFormGuide();
   renderLinks();
   await loadDirectoryData();
   checkOllamaStatus();
-  
+  initNotifications();
+  if (USER_MODULES.length > 0) renderSidebar();
+  fetchDeploymentInfo();
+
   // File drag and drop upload
   const chatContainer = document.querySelector('.chat-container');
-  chatContainer.addEventListener('dragover', e => {
-    e.preventDefault();
-    chatContainer.style.border = "2px dashed var(--primary)";
-    chatContainer.style.background = "rgba(30, 161, 242, 0.05)";
-  });
-  chatContainer.addEventListener('dragleave', e => {
-    e.preventDefault();
-    chatContainer.style.border = "none";
-    chatContainer.style.background = "var(--surface-color)";
-  });
-  chatContainer.addEventListener('drop', async e => {
-    e.preventDefault();
-    chatContainer.style.border = "none";
-    chatContainer.style.background = "var(--surface-color)";
+  const dropZone = document.getElementById('dropZone');
+  if (chatContainer && dropZone) {
+    chatContainer.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.remove('hidden');
+    });
     
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      appendMessage(`🧠 Uploading and analyzing ${file.name}...`, 'ai');
-      
-      const formData = new FormData();
-      formData.append("file", file);
-      
-      try {
-        const res = await fetch('http://localhost:8001/api/kb/upload', {
-          method: 'POST',
-          body: formData
-        });
-        const data = await res.json();
-        if (data.status === "success") {
-          appendMessage(`✅ **File Analyzed!** ${data.message}`, 'ai');
-        } else {
-          appendMessage(`Failed: ${data.message}`, 'ai');
-        }
-      } catch (err) {
-        appendMessage(`Upload Error: Backend might be down.`, 'ai');
+    chatContainer.addEventListener('dragleave', e => {
+      e.preventDefault();
+      if (e.relatedTarget === null || !chatContainer.contains(e.relatedTarget)) {
+        dropZone.classList.add('hidden');
       }
-    }
-  });
+    });
+    
+    chatContainer.addEventListener('drop', async e => {
+      e.preventDefault();
+      dropZone.classList.add('hidden');
+      
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        appendMessage(`🧠 Uploading and analyzing ${file.name}...`, 'ai');
+        
+        const formData = new FormData();
+        formData.append("file", file);
+        
+        try {
+          const res = await fetch('/api/kb/upload', {
+            method: 'POST',
+            body: formData
+          });
+          const data = await res.json();
+          if (data.status === "success") {
+            appendMessage(`✅ **File Analyzed!** ${data.message}`, 'ai');
+            showToast(`Knowledge Ingested: ${file.name}`, 'success');
+            addNotification("File Ingested", `Successfully learned from ${file.name}`, 'info');
+          } else {
+            appendMessage(`Failed: ${data.message}`, 'ai');
+            showToast("Ingestion Failed", "error");
+          }
+        } catch (err) {
+          appendMessage(`Upload Error: Backend might be down.`, 'ai');
+          showToast("Backend connection lost", "error");
+        }
+      }
+    });
+  }
 });
+
+async function fetchConfig() {
+  try {
+    const res = await fetch('/api/config');
+    const data = await res.json();
+    if (data.status === 'success') {
+      SYSTEM_MODULES = data.config.modules;
+    }
+  } catch (e) { console.error("Failed to load system config"); }
+}
+
+let notifications = JSON.parse(localStorage.getItem('trc_notifications')) || [];
 
 async function loadDirectoryData() {
   if (typeof DIRECTORY_DATA !== 'undefined' && DIRECTORY_DATA.faculty) {
@@ -65,6 +86,15 @@ async function loadDirectoryData() {
 
 // Navigation
 function switchView(viewId) {
+  if (viewId === currentView) return; // Avoid redundant switches
+  
+  if (viewId !== 'login' && !USER_MODULES.includes(viewId)) {
+    console.warn("Access Denied for module:", viewId);
+    showToast(`Access Denied: Module '${viewId}' not enabled for your role`, "error");
+    return;
+  }
+
+  currentView = viewId;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   
@@ -73,6 +103,34 @@ function switchView(viewId) {
   
   const targetBtn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
   if (targetBtn) targetBtn.classList.add('active');
+
+  if (viewId === 'tickets') {
+    loadTickets();
+  }
+  if (viewId === 'wayfinding') {
+    loadFloorPlans();
+  }
+  if (viewId === 'settings') {
+    fetchDeploymentInfo();
+  }
+}
+
+function renderSidebar() {
+  const nav = document.getElementById('sidebarNav');
+  if (!nav) return;
+  let html = '';
+  
+  SYSTEM_MODULES.forEach(mod => {
+    if (USER_MODULES.includes(mod.id)) {
+      html += `
+        <button class="nav-btn ${currentView === mod.id ? 'active' : ''}" data-view="${mod.id}" onclick="switchView('${mod.id}')">
+          <span>${mod.icon}</span> ${mod.name}
+        </button>
+      `;
+    }
+  });
+  
+  nav.innerHTML = html;
 }
 
 // ----- CHAT & AI LOGIC -----
@@ -81,13 +139,12 @@ async function checkOllamaStatus() {
   const statusText = document.getElementById('aiStatusText');
   
   try {
-    const res = await fetch('http://127.0.0.1:11434/api/tags');
-    if (res.ok) {
+    const res = await fetch('/api/config');
+    const data = await res.json();
+    if (data.status === 'success') {
       statusDot.className = 'status-dot online';
-      statusText.innerText = 'AI Ready (Local)';
+      statusText.innerText = 'AI Ready (Network)';
       isAIReady = true;
-      // We could also check if phi3:mini is installed and trigger a pull if not,
-      // but for simplicity we assume it's there or we fallback.
     } else {
       setFallbackStatus();
     }
@@ -139,6 +196,14 @@ async function sendMessage() {
     return;
   }
   
+  if (text.toLowerCase().includes("i am in front of") || text.toLowerCase().includes("i am at")) {
+    const loc = text.replace(/i am in front of/i, '').replace(/i am at/i, '').trim();
+    userCurrentLocation = loc;
+    appendMessage(`📍 Got it! I'll remember that you are currently at **${loc}**. Where can I help you get to?`, 'ai');
+    removeTyping(typingId);
+    return;
+  }
+
   if (isAIReady) {
     matchedFaq = await getAIPrediction(text);
   }
@@ -156,7 +221,7 @@ async function sendMessage() {
     // Search the Custom KB / Exported KB
     try {
       appendTyping(typingId);
-      const res = await fetch(`http://localhost:8001/api/kb/search?q=${encodeURIComponent(text)}`);
+      const res = await fetch(`/api/kb/search?q=${encodeURIComponent(text)}`);
       const data = await res.json();
       removeTyping(typingId);
       
@@ -208,7 +273,16 @@ function initiateQA(originalText) {
     html += `**0.** None of these (Cancel)`;
     appendMessage(html, 'ai');
   } else {
-    appendMessage("I'm completely stumped on this one! Could you rephrase the issue with different words?", 'ai');
+    appendMessage("I'm completely stumped on this one! My local knowledge base doesn't have an answer.", 'ai');
+    
+    // Proactive Web Search Button
+    const chatContainer = document.getElementById('chatMessages');
+    const btn = document.createElement('button');
+    btn.className = 'ai-cmd-btn';
+    btn.style.marginTop = '10px';
+    btn.innerHTML = `🌐 Search Google for "${originalText}"`;
+    btn.onclick = () => window.open(`https://www.google.com/search?q=${encodeURIComponent(originalText)}`, '_blank');
+    chatContainer.lastElementChild.querySelector('.msg-bubble').appendChild(btn);
   }
 }
 
@@ -250,7 +324,7 @@ async function checkEnterpriseTools(text) {
     
     appendMessage(`🧠 Saving to permanent memory...`, 'ai');
     try {
-      const res = await fetch(`http://localhost:8001/api/kb/learn`, {
+      const res = await fetch(`/api/kb/learn`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: content })
@@ -265,9 +339,18 @@ async function checkEnterpriseTools(text) {
     return true;
   }
   
+  // Web Search Intent
+  if (lower.startsWith("search google") || lower.startsWith("google ") || lower.startsWith("look up online") || lower.startsWith("search web")) {
+    const clean_q = lower.replace("search google", "").replace("google", "").replace("look up online", "").replace("search web", "").trim();
+    appendMessage(`🌐 **Web Search Mode Activated**<br>Searching for: *${clean_q}*`, 'ai');
+    window.open(`https://www.google.com/search?q=${encodeURIComponent(clean_q)}`, '_blank');
+    showToast("Opening Google Search...", "info");
+    return true;
+  }
+
   // Auto-Detect StarID or Search Intent (Find, Who is, Lookup)
   const starIdMatch = text.match(/\b[a-z]{2}[0-9]{4}[a-z]{2}\b/i);
-  const isSearchIntent = lower.startsWith("find ") || lower.startsWith("who is ") || lower.startsWith("lookup ") || lower.startsWith("search ");
+  const isSearchIntent = (lower.startsWith("find ") || lower.startsWith("who is ") || lower.startsWith("lookup ") || lower.startsWith("search ")) && !lower.includes("google");
   
   if (starIdMatch || isSearchIntent || lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account") || lower.includes("check starid") || lower.includes("find starid")) {
     let query = "";
@@ -291,7 +374,7 @@ async function checkEnterpriseTools(text) {
     appendMessage(`🤖 Searching AD/StarID for: **${query}**...`, 'ai');
     
     try {
-      const res = await fetch(`http://localhost:8001/api/ad/${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/ad/${encodeURIComponent(query)}`);
       const data = await res.json();
       
       if (data.status === "success" && data.data) {
@@ -323,7 +406,7 @@ async function checkEnterpriseTools(text) {
     const device = words[words.length - 1];
     appendMessage(`🤖 Querying SCCM Database for device: **${device}**...`, 'ai');
     try {
-      const res = await fetch(`http://localhost:8001/api/sccm/${device}`);
+      const res = await fetch(`/api/sccm/${device}`);
       const data = await res.json();
       if (data.status === "success" && data.data) {
         let html = `**SCCM Device Found:**<br>`;
@@ -346,7 +429,7 @@ async function checkEnterpriseTools(text) {
     const mac = words[words.length - 1];
     appendMessage(`🤖 Querying Juniper Mist for client: **${mac}**...`, 'ai');
     try {
-      const res = await fetch(`http://localhost:8001/api/mist/${mac}`);
+      const res = await fetch(`/api/mist/${mac}`);
       const data = await res.json();
       if (data.status === "success" && data.data) {
         let html = `**Juniper Mist Client Found:**<br>`;
@@ -425,7 +508,8 @@ function getKeywordPrediction(text) {
         steps: ["This information is pulled live from the SMSU directory.", "Directory requests do not require a TDX ticket unless the user is requesting an office move or name change."],
         form: { Classification:"N/A", Service:"N/A", Urgency:"N/A", RespGroup:"N/A", Title:"N/A" },
         escalate: null,
-        links: ["https://www.smsu.edu/directory/index.html"]
+        links: ["https://www.smsu.edu/directory/index.html"],
+        office: matchedPerson.office
       };
     }
   }
@@ -458,27 +542,28 @@ async function getAIPrediction(text) {
   const categoriesList = FAQ_DATA.map(f => f.service).join(", ");
   const prompt = `You are a Help Desk Assistant. Map the following user issue to the most appropriate service category from this list: [${categoriesList}]. Issue: "${text}". ONLY output the exact name of the category from the list, nothing else.`;
   
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
   try {
-    const response = await fetch('http://127.0.0.1:11434/api/generate', {
+    const response = await fetch('/api/ai/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'phi3:mini', // Assuming we pulled this model
-        prompt: prompt,
-        stream: false
-      })
+      signal: controller.signal,
+      body: JSON.stringify({ prompt })
     });
+    clearTimeout(timeoutId);
     
     if (response.ok) {
       const data = await response.json();
       const predictedCategory = data.response.trim();
       
-      // Find the matching FAQ
       const match = FAQ_DATA.find(f => f.service.toLowerCase() === predictedCategory.toLowerCase());
-      return match || getKeywordPrediction(text); // fallback if model hallucinates
+      return match || getKeywordPrediction(text);
     }
   } catch (err) {
-    console.error("Ollama error:", err);
+    clearTimeout(timeoutId);
+    console.warn("AI Prediction timed out or failed, falling back to keywords.");
   }
   return null;
 }
@@ -550,6 +635,10 @@ function renderFaqResponse(faq) {
         <a href="https://www.google.com/search?q=troubleshoot+${encodeURIComponent(faq.service.replace(/\(.*\)/, ''))}" target="_blank" style="padding: 4px 10px; background: rgba(255, 255, 255, 0.05); color: #ccc; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 4px; text-decoration: none;">Search Web</a>
       </div>
     </div>`;
+  }
+  
+  if (faq.office) {
+    html += `<br><button class="ai-cmd-btn" style="width:100%; margin-top:10px;" onclick="getDirections('${faq.office}')">🧭 Get Walking Directions</button>`;
   }
   
   appendMessage(html, 'ai');
@@ -694,6 +783,295 @@ function renderFormGuide() {
   container.innerHTML = html;
 }
 
+// ----- TICKETS LOGIC -----
+let activeTickets = [];
+
+async function loadTickets() {
+  const listEl = document.getElementById('ticketsList');
+  listEl.innerHTML = '<div class="ticket-placeholder" style="height:auto; padding:40px;"><div class="placeholder-icon" style="font-size:32px;">⏳</div><p>Fetching tickets...</p></div>';
+  
+  try {
+    const res = await fetch('/api/tdx/tickets');
+    const data = await res.json();
+    if (data.status === 'success') {
+      activeTickets = data.data;
+      renderTicketList(activeTickets);
+    }
+  } catch (e) {
+    listEl.innerHTML = '<p style="padding:20px; color:var(--red);">Failed to load tickets. Is the server running?</p>';
+  }
+}
+
+function renderTicketList(tickets) {
+  const container = document.getElementById('ticketsList');
+  container.innerHTML = '';
+  
+  tickets.forEach(ticket => {
+    const card = document.createElement('div');
+    card.className = 'ticket-card';
+    card.id = `ticket-card-${ticket.id}`;
+    card.onclick = () => showTicketDetail(ticket.id);
+    
+    const statusClass = ticket.status.toLowerCase().includes('process') ? 'status-process' : 'status-new';
+    const priorityClass = ticket.priority.toLowerCase() === 'high' ? 'priority-high' : '';
+    
+    card.innerHTML = `
+      <div class="ticket-card-header">
+        <span class="ticket-id">#${ticket.id}</span>
+        <span class="ticket-status ${statusClass}">${ticket.status}</span>
+      </div>
+      <div class="ticket-card-title">${ticket.title}</div>
+      <div class="ticket-card-meta">
+        <span>👤 ${ticket.requestor}</span>
+        <span class="${priorityClass}">🚩 ${ticket.priority}</span>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+async function showTicketDetail(id) {
+  const ticket = activeTickets.find(t => t.id === id);
+  if (!ticket) return;
+  
+  // Update active state in list
+  document.querySelectorAll('.ticket-card').forEach(c => c.classList.remove('active'));
+  document.getElementById(`ticket-card-${id}`).classList.add('active');
+  
+  const detailEl = document.getElementById('ticketDetail');
+  detailEl.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-title">${ticket.title}</div>
+      <div class="detail-meta">
+        <span><strong>ID:</strong> #${ticket.id}</span>
+        <span><strong>Requestor:</strong> ${ticket.requestor}</span>
+        <span><strong>Priority:</strong> <span class="${ticket.priority === 'High' ? 'priority-high' : ''}">${ticket.priority}</span></span>
+        <span><strong>Service:</strong> ${ticket.service}</span>
+      </div>
+    </div>
+    
+    <div class="briefing-section">
+      <h4>Original Description</h4>
+      <p style="background: rgba(255,255,255,0.03); padding: 16px; border-radius: 8px;">${ticket.description}</p>
+    </div>
+    
+    <div id="aiBriefingContainer" class="briefing-card">
+      <div class="placeholder-icon" style="font-size:24px; animation: bounce 1s infinite;">🤖</div>
+      <p style="text-align:center; font-size:12px; color:var(--text2);">AI is analyzing ticket and matching Knowledge Base...</p>
+    </div>
+    
+    <div id="kbSuggestionsContainer" class="kb-suggestions hidden">
+      <h4 style="font-size: 11px; color: var(--accent2); margin-top: 20px;">AI Recommended Procedures</h4>
+      <div id="kbSuggestionList" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;"></div>
+    </div>
+  `;
+  
+  // Generate AI Briefing and match KB
+  generateAIBriefing(ticket);
+  matchKnowledgeBase(ticket);
+}
+
+async function matchKnowledgeBase(ticket) {
+  try {
+    const res = await fetch(`/api/kb/search?q=${encodeURIComponent(ticket.title)}`);
+    const data = await res.json();
+    if (data.status === 'success' && data.results.length > 0) {
+      const container = document.getElementById('kbSuggestionsContainer');
+      const list = document.getElementById('kbSuggestionList');
+      container.classList.remove('hidden');
+      list.innerHTML = data.results.slice(0, 3).map(res => `
+        <div class="kb-chip" onclick="switchView('faq'); document.getElementById('faqSearchInput').value='${res.item.q}'; searchFAQ();">
+          📖 ${res.item.q}
+        </div>
+      `).join('');
+    }
+  } catch (e) {}
+}
+
+async function generateAIBriefing(ticket) {
+  const container = document.getElementById('aiBriefingContainer');
+  
+  const prompt = `You are a Senior IT Tech. Analyze this ticket and provide a concise briefing for a junior tech.
+  Ticket Title: ${ticket.title}
+  Description: ${ticket.description}
+  
+  Format your response EXACTLY like this:
+  SUMMARY: [One sentence summary]
+  STEPS: [Bullet points of what to do next]
+  WARNINGS: [Any potential gotchas or things to watch out for]`;
+  
+  try {
+    const res = await fetch('/api/ai/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt })
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      const text = data.response;
+      
+      // Basic parser for our custom format
+      const summary = text.match(/SUMMARY:(.*?)(?=STEPS:|$)/si)?.[1]?.trim() || "See description.";
+      const steps = text.match(/STEPS:(.*?)(?=WARNINGS:|$)/si)?.[1]?.trim() || "Follow standard troubleshooting.";
+      const warnings = text.match(/WARNINGS:(.*?)$/si)?.[1]?.trim() || "No specific warnings.";
+      
+      container.innerHTML = `
+        <div class="briefing-section">
+          <h4>AI Summary</h4>
+          <p>${summary}</p>
+        </div>
+        <div class="briefing-section">
+          <h4>Recommended Next Steps</h4>
+          <p>${steps.replace(/\n/g, '<br>')}</p>
+        </div>
+        <div class="briefing-section">
+          <h4>Special Considerations</h4>
+          <p>${warnings.replace(/\n/g, '<br>')}</p>
+        </div>
+      `;
+    } else {
+      container.innerHTML = `<p style="color:var(--yellow);">AI Briefing unavailable. Local Ollama server returned an error.</p>`;
+    }
+  } catch (e) {
+    container.innerHTML = `
+      <div class="briefing-section">
+        <h4>Manual Triage Suggestion</h4>
+        <p>Could not connect to AI engine. Based on the category <strong>${ticket.service}</strong>, you should check the standard troubleshooting steps in the FAQ Library.</p>
+      </div>
+    `;
+  }
+}
+
+function generateHandoffReport() {
+  if (activeTickets.length === 0) return;
+  
+  let report = `TRC SHIFT HANDOFF REPORT - ${new Date().toLocaleString()}\n`;
+  report += `==================================================\n\n`;
+  
+  activeTickets.forEach(t => {
+    report += `[#${t.id}] ${t.title}\n`;
+    report += `Status: ${t.status} | Priority: ${t.priority}\n`;
+    report += `Requestor: ${t.requestor}\n`;
+    report += `Brief: ${t.description.substring(0, 100)}...\n`;
+    report += `--------------------------------------------------\n`;
+  });
+  
+  const blob = new Blob([report], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `handoff_report_${new Date().toISOString().split('T')[0]}.txt`;
+  a.click();
+  
+  appendMessage("📑 **Handoff Report Generated!** I've prepared a summary of all active tickets for the next shift.", 'ai');
+}
+
+// ----- WAYFINDING LOGIC -----
+let allFloorPlans = [];
+
+async function loadFloorPlans() {
+  const container = document.getElementById('mapList');
+  container.innerHTML = '<p style="padding:20px; color:var(--text2);">Loading maps...</p>';
+  
+  try {
+    const res = await fetch('/api/wayfinding/list');
+    const data = await res.json();
+    if (data.status === 'success') {
+      allFloorPlans = data.data;
+      renderMapList(allFloorPlans);
+    }
+  } catch (e) {
+    container.innerHTML = '<p style="padding:20px; color:var(--red);">Error loading floor plans.</p>';
+  }
+}
+
+function renderMapList(maps) {
+  const container = document.getElementById('mapList');
+  container.innerHTML = '';
+  
+  maps.forEach(map => {
+    const div = document.createElement('div');
+    div.className = 'map-item';
+    div.onclick = () => showMap(map);
+    div.innerHTML = `
+      <div style="flex: 1;">
+        <div class="map-name">${map.floor} Floor - ${map.building}</div>
+        <div class="map-meta">${map.file}</div>
+      </div>
+      <button class="dir-btn" onclick="event.stopPropagation(); getDirections('${map.floor} Floor ${map.building}')">🧭</button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+async function getDirections(target, start = userCurrentLocation) {
+  showToast(`AI Calculating path...`, 'info');
+  switchView('chat');
+  
+  const typingId = 'typing-dir-' + Date.now();
+  appendTyping(typingId);
+  
+  try {
+    const res = await fetch('/api/ai/directions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, start })
+    });
+    const data = await res.json();
+    removeTyping(typingId);
+    
+    if (data.status === 'success') {
+      const steps = data.directions.split('\n').filter(s => s.trim().length > 0);
+      let currentStepIdx = 0;
+      
+      const renderStep = (idx) => {
+        const stepHtml = `
+          <div class="wayfinding-bubble">
+            <div style="font-weight:bold; color:var(--accent2); margin-bottom:8px;">📍 Step ${idx + 1} of ${steps.length}</div>
+            <p>${steps[idx]}</p>
+            ${idx < steps.length - 1 ? 
+              `<button class="ai-cmd-btn" style="margin-top:10px; width:100%;" onclick="this.parentElement.innerHTML='✅ Done: '+this.previousElementSibling.innerText; window.nextWayfindingStep(${idx + 1})">Next Step ➡️</button>` : 
+              `<div style="color:var(--green); font-weight:bold; margin-top:10px;">🚩 You have arrived at ${target}!</div>`}
+          </div>
+        `;
+        appendMessage(stepHtml, 'ai');
+      };
+      
+      window.nextWayfindingStep = renderStep;
+      appendMessage(`🚶 **Let's go!** I've mapped out the route from **${start}** to **${target}**. I'll guide you step-by-step.`, 'ai');
+      renderStep(0);
+      
+    }
+  } catch (e) {
+    removeTyping(typingId);
+    appendMessage("Sorry, I couldn't generate directions right now.", 'ai');
+  }
+}
+
+function filterMaps() {
+  const q = document.getElementById('mapSearchInput').value.toLowerCase();
+  const filtered = allFloorPlans.filter(m => 
+    m.building.toLowerCase().includes(q) || 
+    m.floor.toLowerCase().includes(q) || 
+    m.file.toLowerCase().includes(q)
+  );
+  renderMapList(filtered);
+}
+
+function showMap(map) {
+  document.querySelectorAll('.map-item').forEach(i => i.classList.remove('active'));
+  // Find the clicked item (brute force for mock)
+  event.currentTarget.classList.add('active');
+  
+  const placeholder = document.getElementById('mapPlaceholder');
+  const viewer = document.getElementById('pdfViewer');
+  
+  placeholder.classList.add('hidden');
+  viewer.classList.remove('hidden');
+  viewer.src = map.url;
+}
+
 // ----- LINKS LOGIC -----
 function renderLinks() {
   const container = document.getElementById('linksGrid');
@@ -707,14 +1085,18 @@ function renderLinks() {
     
     const catLinks = QUICK_LINKS.filter(l => l.category === cat);
     catLinks.forEach(link => {
+      const isFileLink = link.url.startsWith('file://');
       html += `
-        <a href="${link.url}" target="_blank" class="link-card">
-          <div class="link-icon">${link.icon}</div>
-          <div>
-            <div class="link-name">${link.name}</div>
-            <div class="link-url">${link.url === '—' ? 'Link not provided' : link.url}</div>
-          </div>
-        </a>
+        <div class="link-card-wrapper">
+          <a href="${link.url}" ${isFileLink ? 'onclick="return false;"' : 'target="_blank"'} class="link-card">
+            <div class="link-icon">${link.icon}</div>
+            <div style="flex: 1; min-width: 0;">
+              <div class="link-name">${link.name}</div>
+              <div class="link-url">${link.url === '—' ? 'Link not provided' : link.url}</div>
+            </div>
+          </a>
+          ${isFileLink ? `<button class="copy-path-btn" onclick="copyPath('${link.url.replace('file://', '\\\\').replace(/\//g, '\\')}', this)" title="Copy Network Path">📋 Copy</button>` : ''}
+        </div>
       `;
     });
     
@@ -722,6 +1104,239 @@ function renderLinks() {
   });
   
   container.innerHTML = html;
+}
+
+function copyPath(path, btn) {
+  navigator.clipboard.writeText(path).then(() => {
+    const originalText = btn.innerText;
+    btn.innerText = "✅ Copied!";
+    btn.style.background = "var(--green)";
+    showToast("Path copied to clipboard", "success");
+    setTimeout(() => {
+      btn.innerText = originalText;
+      btn.style.background = "";
+    }, 2000);
+  });
+}
+
+function copyToClipboard(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const originalText = btn.innerText;
+    btn.innerText = "✅ Copied!";
+    btn.classList.add('success');
+    showToast("Link copied to clipboard", "success");
+    setTimeout(() => {
+      btn.innerText = originalText;
+      btn.classList.remove('success');
+    }, 2000);
+  });
+}
+
+async function fetchDeploymentInfo() {
+  const urlEl = document.getElementById('deploymentUrl');
+  if (!urlEl) return;
+  
+  try {
+    const res = await fetch('/api/deployment/info');
+    const data = await res.json();
+    if (data.status === 'success') {
+      urlEl.innerText = data.url;
+    }
+  } catch (e) {
+    urlEl.innerText = "Error detecting network IP";
+  }
+}
+
+// ----- NOTIFICATION SYSTEM LOGIC -----
+function initNotifications() {
+  renderNotifications();
+  // Start SLA Monitoring
+  setInterval(checkSLAs, 30000); // Check every 30 seconds
+}
+
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  
+  const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️';
+  toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+  
+  container.appendChild(toast);
+  
+  // Auto remove after 4 seconds
+  setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+function addNotification(title, message, level = 'info') {
+  const notif = {
+    id: Date.now(),
+    title,
+    message,
+    level,
+    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    read: false
+  };
+  
+  notifications.unshift(notif);
+  if (notifications.length > 20) notifications.pop(); // Keep last 20
+  
+  saveNotifications();
+  renderNotifications();
+  
+  if (level === 'critical' || level === 'warning') {
+    showToast(`${title}: ${message}`, level);
+  }
+}
+
+function renderNotifications() {
+  const listEl = document.getElementById('notifList');
+  const badge = document.getElementById('notifBadge');
+  const unreadCount = notifications.filter(n => !n.read).length;
+  
+  if (unreadCount > 0) {
+    badge.innerText = unreadCount > 9 ? '9+' : unreadCount;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+  
+  if (notifications.length === 0) {
+    listEl.innerHTML = '<div class="notif-empty">No new notifications</div>';
+    return;
+  }
+  
+  listEl.innerHTML = notifications.map(n => `
+    <div class="notif-item ${n.level} ${n.read ? 'read' : 'unread'}" onclick="markAsRead(${n.id})">
+      <h4>${n.title}</h4>
+      <p>${n.message}</p>
+      <div style="font-size: 10px; color: var(--text2); margin-top: 4px;">${n.time}</div>
+    </div>
+  `).join('');
+}
+
+function markAsRead(id) {
+  const notif = notifications.find(n => n.id === id);
+  if (notif) {
+    notif.read = true;
+    saveNotifications();
+    renderNotifications();
+  }
+}
+
+function clearNotifications() {
+  notifications = [];
+  saveNotifications();
+  renderNotifications();
+}
+
+function toggleNotifMenu() {
+  document.getElementById('notifMenu').classList.toggle('hidden');
+  // Mark all as read when opening menu
+  notifications.forEach(n => n.read = true);
+  saveNotifications();
+  renderNotifications();
+}
+
+function saveNotifications() {
+  localStorage.setItem('trc_notifications', JSON.stringify(notifications));
+}
+
+async function checkSLAs() {
+  if (activeTickets.length === 0) return;
+  
+  for (const ticket of activeTickets) {
+    // 1. Static Rule check
+    if (ticket.priority === 'High' && ticket.status === 'New') {
+      if (!notifications.some(n => n.title.includes(ticket.id))) {
+        addNotification("SLA ALERT", `Ticket #${ticket.id} is HIGH priority and still NEW!`, 'critical');
+      }
+    }
+    
+    // 2. AI-Driven Sentiment check (Proactive)
+    if (ticket.status === 'New' && !notifications.some(n => n.title.includes(`AI-${ticket.id}`))) {
+      try {
+        const res = await fetch('/api/ai/analyze-urgency', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: ticket.description + " " + ticket.title })
+        });
+        const data = await res.json();
+        if (data.status === 'success' && data.is_urgent) {
+          addNotification(`🚨 AI URGENCY: #${ticket.id}`, `Hidden urgency detected: "${ticket.title}"`, 'critical');
+        }
+      } catch (e) {}
+    }
+  }
+}
+
+async function executeAICommand() {
+  const input = document.getElementById('aiCommandInput');
+  const query = input.value.trim();
+  if (!query) return;
+  
+  showToast("AI Orchestrating...", "info");
+  
+  try {
+    const res = await fetch('/api/ai/orchestrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query })
+    });
+    const data = await res.json();
+    
+    input.value = '';
+    
+    if (data.ai_suggestion) {
+      appendMessage(`🤖 **AI Suggestion:** ${data.ai_suggestion}`, 'ai');
+    }
+
+    if (data.intent === 'sccm_lookup') {
+      switchView('sccm');
+      document.getElementById('sccmSearchInput').value = data.params.query;
+      searchSCCM();
+    } else if (data.intent === 'directory_search') {
+      switchView('directory');
+      document.getElementById('dirSearchInput').value = data.params.query;
+      searchDirectory();
+    } else if (data.intent === 'kb_search') {
+      switchView('faq');
+      document.getElementById('faqSearchInput').value = data.params.query;
+      searchFAQ();
+    } else if (data.intent === 'map_lookup') {
+      switchView('wayfinding');
+      document.getElementById('mapSearchInput').value = data.params.query;
+      filterMaps();
+      showToast(`AI Suggested Map: ${data.params.query}`, 'info');
+    } else if (data.intent === 'get_directions') {
+      getDirections(data.params.target, data.params.start || userCurrentLocation);
+    } else if (data.intent === 'web_search') {
+      appendMessage(`🌐 **Web Search Mode Activated**<br>Searching for: *${data.params.query}*`, 'ai');
+      window.open(`https://www.google.com/search?q=${encodeURIComponent(data.params.query)}`, '_blank');
+      showToast("Opening Google Search...", "info");
+    } else if (data.intent === 'clarify') {
+      appendMessage(`🤔 **I need a bit more detail.** Could you please clarify your request? (e.g., Which building? What specific error code are you seeing?)`, 'ai');
+      switchView('chat');
+      document.getElementById('userInput').focus();
+    } else if (data.intent === 'smart_clarify') {
+      appendMessage(`🔐 **I'd love to help you with that!** But I need to know which service you are referring to.<br><br>Are you asking about:<br>• **StarID** Password?<br>• **Email/O365** Password?<br>• **WiFi/Eduroam** Password?<br>• **D2L** Access?`, 'ai');
+      switchView('chat');
+      document.getElementById('userInput').focus();
+    } else {
+      switchView('chat');
+      document.getElementById('userInput').value = query;
+      sendMessage();
+    }
+  } catch (e) {
+    showToast("Command failed", "error");
+  }
+}
+
+function handleCommandKey(e) {
+  if (e.key === 'Enter') executeAICommand();
 }
 
 // ----- AUTHENTICATION LOGIC -----
@@ -743,7 +1358,7 @@ async function performLogin() {
   errorDiv.innerText = "";
   
   try {
-    const res = await fetch('http://localhost:8001/api/auth/login', {
+    const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: user, password: pass })
@@ -756,11 +1371,16 @@ async function performLogin() {
         role: data.role,
         username: data.username
       };
+      USER_MODULES = data.modules || [];
       localStorage.setItem('trc_session', JSON.stringify(currentUser));
+      localStorage.setItem('trc_modules', JSON.stringify(USER_MODULES));
       document.getElementById('loginOverlay').classList.add('hidden');
       const appDiv = document.querySelector('.app');
-      if (appDiv) appDiv.style.display = 'flex'; updateProfileUI();
-      appendMessage(`✅ **Welcome, ${data.username}!** You are logged in as **${data.role.toUpperCase()}**. How can I help you today?`, 'ai');
+      if (appDiv) appDiv.style.display = 'flex';
+      updateProfileUI();
+      renderSidebar();
+      switchView(USER_MODULES[0] || 'chat');
+      appendMessage(`✅ **Welcome, ${data.username}!** Your modules are loaded. How can I help you?`, 'ai');
     } else {
       errorDiv.innerText = data.message || "Login failed.";
     }
@@ -772,13 +1392,37 @@ async function performLogin() {
   }
 }
 
-function checkSession() {
+async function checkSession() {
   const session = localStorage.getItem('trc_session');
   if (session) {
     currentUser = JSON.parse(session);
+    // Refresh modules from server to avoid stale localStorage
+    try {
+      const res = await fetch('/api/auth/me?token=' + currentUser.token);
+      const data = await res.json();
+      if (data.status === "success") {
+        USER_MODULES = data.data.modules || [];
+        localStorage.setItem('trc_modules', JSON.stringify(USER_MODULES));
+      } else {
+        // Session expired or invalid
+        performLogout();
+        return;
+      }
+    } catch (e) {
+      // Offline fallback
+      USER_MODULES = JSON.parse(localStorage.getItem('trc_modules')) || [];
+    }
+
     document.getElementById('loginOverlay').classList.add('hidden');
     const appDiv = document.querySelector('.app');
-    if (appDiv) appDiv.style.display = 'flex'; updateProfileUI();
+    if (appDiv) appDiv.style.display = 'flex';
+    updateProfileUI();
+    renderSidebar();
+    
+    // Switch to first allowed view if current is login or empty
+    if (currentView === 'login' || !currentView) {
+        switchView(USER_MODULES[0] || 'chat');
+    }
   }
 }
 
@@ -819,29 +1463,50 @@ async function updateProfileUI() {
 
 async function loadAdminUsers() {
   try {
-    const res = await fetch('http://localhost:8001/api/admin/users');
+    const res = await fetch('/api/admin/users');
     const data = await res.json();
     if (data.status === 'success') {
       renderAdminList(data.roles);
     }
-  } catch (e) { console.error(\"Failed to load admin users\", e); }
+  } catch (e) { console.error("Failed to load admin users", e); }
 }
 
 function renderAdminList(roles) {
   const container = document.getElementById('adminUserList');
   let html = '';
-  for (const [user, role] of Object.entries(roles)) {
-    html += \
-      <div class=\"admin-user-item\">
-        <div class=\"admin-user-info\">
-          <span class=\"admin-user-id\">\</span>
-          <span class=\"admin-user-role\">\</span>
+  const entries = Object.entries(roles);
+  
+  entries.forEach(([user, data]) => {
+    const roleName = typeof data === 'string' ? data : (data.role || 'unknown');
+    html += `
+      <div class="admin-user-item">
+        <div class="admin-user-info">
+          <span class="admin-user-id">${user}</span>
+          <span class="admin-user-role">${roleName.toUpperCase()}</span>
         </div>
-        <button onclick=\"deleteUser('\')\" style=\"background:none; border:none; color:var(--red); cursor:pointer;\">???</button>
+        <button onclick="deleteUser('${user}')" style="background:none; border:none; color:var(--red); cursor:pointer; font-size:16px;">✕</button>
       </div>
-    \;
-  }
-  container.innerHTML = html || '<p style=\"font-size:12px; color:var(--text2);\">No custom roles defined yet.</p>';
+    `;
+  });
+  
+  // Add a summary counter
+  const summaryHtml = `<p style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">Total Managed Users: ${entries.length}</p>`;
+  container.innerHTML = summaryHtml + (html || '<p style="font-size:12px; color:var(--text2);">No custom roles defined yet.</p>');
+}
+
+async function deleteUser(username) {
+  if (!confirm(`Are you sure you want to remove permissions for ${username}?`)) return;
+  
+  try {
+    const res = await fetch(`/api/admin/users/${username}`, {
+      method: 'DELETE'
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      loadAdminUsers();
+      appendMessage(`🗑️ Permissions removed for **${username}**.`, 'ai');
+    }
+  } catch (e) { alert("Failed to delete user"); }
 }
 
 async function adminAddUser() {
@@ -850,20 +1515,23 @@ async function adminAddUser() {
   if (!username) return;
   
   try {
-    await fetch('http://localhost:8001/api/admin/users', {
+    await fetch('/api/admin/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, role })
     });
     document.getElementById('newUserId').value = '';
     loadAdminUsers();
-    appendMessage(\"? User **\" + username + \"** assigned to role **\" + role.toUpperCase() + \"**.\", 'ai');
-  } catch (e) { alert(\"Failed to update user\"); }
+    appendMessage(`👤 User **${username}** assigned to role **${role.toUpperCase()}**.`, 'ai');
+  } catch (e) { alert("Failed to update user"); }
 }
 
 // Close menu if clicking outside
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.user-profile')) {
     document.getElementById('userMenu').classList.add('hidden');
+  }
+  if (!e.target.closest('.notification-wrapper')) {
+    document.getElementById('notifMenu').classList.add('hidden');
   }
 });

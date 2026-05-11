@@ -1,0 +1,25 @@
+{
+  "ai_engine": {
+    "provider": "ollama",
+    "endpoint": "http://127.0.0.1:11434/api/generate",
+    "model": "phi3:mini"
+  },
+  "modules": [
+    { "id": "chat", "name": "AI Assistant", "icon": "🤖" },
+    { "id": "tickets", "name": "My Tickets", "icon": "🎫" },
+    { "id": "directory", "name": "Directory", "icon": "📇" },
+    { "id": "sccm", "name": "SCCM Tools", "icon": "💻" },
+    { "id": "ad", "name": "AD Management", "icon": "🔑" },
+    { "id": "mist", "name": "Mist WiFi", "icon": "📶" },
+    { "id": "form", "name": "TDX Form Guide", "icon": "📋" },
+    { "id": "links", "name": "Quick Links", "icon": "🔗" },
+    { "id": "wayfinding", "name": "Wayfinding", "icon": "🗺️" },
+    { "id": "settings", "name": "Admin Panel", "icon": "⚙️" }
+  ],
+  "default_module_permissions": {
+    "helpdesk": ["chat", "tickets", "directory", "form", "links", "wayfinding"],
+    "tech": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "wayfinding"],
+    "wag": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ad", "wayfinding"],
+    "sysadmin": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ad", "settings", "wayfinding"]
+  }
+}

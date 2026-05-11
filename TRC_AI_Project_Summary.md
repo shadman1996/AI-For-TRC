@@ -86,6 +86,19 @@ Administrators can drag-and-drop any CSV, TXT, or JSON file (such as a TDX KB ex
 2. Stores the knowledge in the local database
 3. Deletes the uploaded file (no data residue)
 
+### 7. Secure Login & Role-Based Access Control
+Staff log in via StarID. The system assigns one of four roles with granular permissions:
+- **Help Desk**: Chat, ticket guidance, directory lookup.
+- **Tech**: Above + SCCM & Mist diagnostics.
+- **WAG**: Above + elevated AD options.
+- **System Admin**: Full access + Admin Panel for role management, KB ingestion, and **Deployment Monitoring**.
+
+### 8. Network Deployment Toolkit
+Administrators can now deploy the tool across the campus LAN with one click:
+- **Auto-Discovery**: The system automatically detects the server's network IP address.
+- **Firewall Setup**: Includes a `setup_firewall.bat` script to securely open the port for WAG and Help Desk staff.
+- **Deployment Dashboard**: Shows the "Live URL" directly in the Admin Panel for easy sharing.
+
 ---
 
 ## Security & Privacy Posture
@@ -98,28 +111,18 @@ Administrators can drag-and-drop any CSV, TXT, or JSON file (such as a TDX KB ex
 | **Mist API token** | Stored only in the local config file on the server; not in version control. |
 | **Access control** | Role-based login system planned (Phase 2) using Active Directory group membership. |
 | **Code transparency** | Full source code available in a private GitHub repository for audit. |
-| **Data at rest** | The AI's learned knowledge base is stored as a plain JSON file on the local machine. |
+| **Data at rest** | The AI's learned knowledge base and user roles are stored in a **SQLite database** on the local machine for high-concurrency access. |
 
 ---
 
 ## Planned Development Roadmap
 
-### Phase 2 — Login & Role-Based Access Control (Next)
-Every staff member logs in using their StarID. The system uses Active Directory to automatically assign them to one of four roles, each with appropriate permissions:
-
-| Role | Capabilities |
-|---|---|
-| **Help Desk** | AI chat, ticket guidance, staff directory lookup |
-| **Tech** | All above + SCCM device lookup + Mist WiFi diagnostics |
-| **WAG** | All above + elevated AD query options |
-| **System Admin** | All above + Knowledge Base file upload and AI configuration |
-
-### Phase 3 — Live TDX Ticket Integration
+### Phase 3 — Live TDX Ticket Integration (Next Focus)
 With a TDX API token, the AI will:
-- Pull open tickets assigned to the logged-in user's queue
-- Analyze each ticket and suggest the next resolution step
-- Auto-generate escalation notes when a ticket needs to be passed up
-- Produce shift handoff summaries so incoming staff know exactly what's open
+- **Live Ticket Queues**: Pull open tickets assigned to the logged-in user or their group.
+- **Intelligent Triage**: Analyze ticket descriptions and suggest immediate next steps.
+- **Auto-Drafting**: Generate professional escalation notes and resolution summaries.
+- **Shift Handoffs**: Produce automated reports for incoming staff so no context is lost.
 
 ### Phase 4 — Full Operations Hub
 - SLA and deadline alerts for aging tickets
@@ -135,6 +138,7 @@ With a TDX API token, the AI will:
 |---|---|---|
 | Web interface | HTML / CSS / JavaScript | Local PC |
 | Backend API | Python (FastAPI) | Local PC |
+| Database | SQLite | Local PC |
 | AI Engine | Ollama (`phi3:mini` model) | Local PC |
 | Active Directory | Windows PowerShell (DirectoryServices) | Campus LAN |
 | SCCM | AdminService REST API (HTTPS) | Campus LAN |

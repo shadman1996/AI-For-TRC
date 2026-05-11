@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+
+# Database
+*.db
+*.db-journal
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

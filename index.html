@@ -32,22 +32,8 @@
         <div class="logo-sub">SMSU Help Desk AI</div>
       </div>
     </div>
-    <nav class="sidebar-nav">
-      <button class="nav-btn active" data-view="chat" onclick="switchView('chat')">
-        <span>💬</span> AI Assistant
-      </button>
-      <button class="nav-btn" data-view="faq" onclick="switchView('faq')">
-        <span>📚</span> FAQ Library
-      </button>
-      <button class="nav-btn" data-view="form" onclick="switchView('form')">
-        <span>📋</span> TDX Form Guide
-      </button>
-      <button class="nav-btn" data-view="links" onclick="switchView('links')">
-        <span>🔗</span> Quick Links
-      </button>
-      <button class="nav-btn admin-only hidden" data-view="settings" onclick="switchView('settings')">
-        <span>⚙️</span> Admin Panel
-      </button>
+    <nav class="sidebar-nav" id="sidebarNav">
+      <!-- Populated dynamically by app.js based on modular permissions -->
     </nav>
     <div class="sidebar-status">
       <div class="status-dot" id="aiStatus"></div>
@@ -59,16 +45,32 @@
   <main class="main">
     <header class="top-bar">
       <div class="top-search"></div>
-      <div class="user-profile">
-        <div class="user-info">
-          <span id="headerUserName">Guest</span>
-          <span id="headerUserRole" class="role-badge">Help Desk</span>
+      <div class="top-actions">
+        <div class="notification-wrapper">
+          <div class="notif-bell" onclick="toggleNotifMenu()">
+            🔔<span id="notifBadge" class="notif-badge hidden"></span>
+          </div>
+          <div id="notifMenu" class="notif-menu hidden">
+            <div class="notif-header">
+              <span>Notifications</span>
+              <button onclick="clearNotifications()">Clear All</button>
+            </div>
+            <div id="notifList" class="notif-list">
+              <div class="notif-empty">No new notifications</div>
+            </div>
+          </div>
         </div>
-        <div class="user-avatar" onclick="toggleUserMenu()">👤</div>
-        <div id="userMenu" class="user-menu hidden">
-          <button onclick="switchView('settings')">⚙️ Admin Settings</button>
-          <div class="menu-divider"></div>
-          <button onclick="performLogout()" style="color: var(--red);">🚪 Log Out</button>
+        <div class="user-profile">
+          <div class="user-info">
+            <span id="headerUserName">Guest</span>
+            <span id="headerUserRole" class="role-badge">Help Desk</span>
+          </div>
+          <div class="user-avatar" onclick="toggleUserMenu()">👤</div>
+          <div id="userMenu" class="user-menu hidden">
+            <button onclick="switchView('settings')">⚙️ Admin Settings</button>
+            <div class="menu-divider"></div>
+            <button onclick="performLogout()" style="color: var(--red);">🚪 Log Out</button>
+          </div>
         </div>
       </div>
     </header>
@@ -76,10 +78,24 @@
     <!-- CHAT VIEW -->
     <section class="view active" id="view-chat">
       <div class="view-header">
-        <h1>Describe the Issue</h1>
+        <h1>TRC AI Assistant</h1>
         <p>Tell me what's happening and I'll guide you through the right steps &amp; TDX form.</p>
       </div>
+      
+      <div class="ai-command-bar">
+        <div class="ai-sparkle">✨</div>
+        <input type="text" id="aiCommandInput" placeholder="AI Command: 'Search SCCM for PC-123' or 'Find StarID for Shadman'..." onkeydown="handleCommandKey(event)">
+        <button class="ai-cmd-btn" onclick="executeAICommand()">Execute</button>
+      </div>
+
       <div class="chat-container">
+        <div id="dropZone" class="drop-zone hidden">
+          <div class="drop-zone-content">
+            <div class="drop-icon">📂</div>
+            <h3>Drop File to Ingest</h3>
+            <p>CSV, JSON, or TXT</p>
+          </div>
+        </div>
         <div class="chat-messages" id="chatMessages">
           <div class="msg ai">
             <div class="msg-avatar">🤖</div>
@@ -133,6 +149,55 @@
       <div class="links-grid" id="linksGrid"></div>
     </section>
 
+    <!-- TICKETS VIEW -->
+    <section class="view" id="view-tickets">
+      <div class="view-header">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <h1>My Active Tickets</h1>
+            <p>Manage your assigned work and get AI-powered briefings.</p>
+          </div>
+          <button class="btn-handoff" onclick="generateHandoffReport()">📑 Shift Handoff Report</button>
+        </div>
+      </div>
+      <div class="tickets-container">
+        <div class="tickets-list" id="ticketsList">
+          <!-- Populated by JS -->
+        </div>
+        <div class="ticket-detail" id="ticketDetail">
+          <div class="ticket-placeholder">
+            <div class="placeholder-icon">🎫</div>
+            <h3>Select a ticket to see details and AI briefing</h3>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WAYFINDING VIEW -->
+    <section class="view" id="view-wayfinding">
+      <div class="view-header">
+        <h1>Campus Wayfinding</h1>
+        <p>Locate rooms and offices across the SMSU campus.</p>
+      </div>
+      <div class="wayfinding-container">
+        <div class="wayfinding-sidebar">
+          <div class="search-box">
+            <input type="text" id="mapSearchInput" placeholder="Search building or floor..." oninput="filterMaps()">
+          </div>
+          <div class="map-list" id="mapList">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+        <div class="map-viewer">
+          <div id="mapPlaceholder" class="ticket-placeholder">
+            <div class="placeholder-icon">🗺️</div>
+            <h3>Select a floor plan to view</h3>
+          </div>
+          <iframe id="pdfViewer" src="" class="hidden" style="width:100%; height:100%; border:none;"></iframe>
+        </div>
+      </div>
+    </section>
+
     <!-- SETTINGS / ADMIN VIEW -->
     <section class="view" id="view-settings">
       <div class="view-header">
@@ -140,6 +205,21 @@
         <p>Manage user roles and system configuration</p>
       </div>
       <div class="settings-container">
+        <div class="settings-card" id="deploymentCard">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin:0;">🚀 Deployment Dashboard</h3>
+            <span class="status-badge online">Live on Network</span>
+          </div>
+          <p>Share this link with WAG and Help Desk staff to allow them to access the assistant from their computers.</p>
+          <div class="deployment-url-box">
+            <span id="deploymentUrl">Detecting LAN IP...</span>
+            <button onclick="copyToClipboard(document.getElementById('deploymentUrl').innerText, this)">📋 Copy Link</button>
+          </div>
+          <div style="margin-top: 15px; font-size: 12px; color: var(--text-muted);">
+            <strong>Network Setup:</strong> If others cannot connect, ensure Port 8001 is open in your firewall (Run <code>setup_firewall.bat</code> as Admin).
+          </div>
+        </div>
+
         <div class="settings-card">
           <h3>User Role Management</h3>
           <p>Assign roles to StarIDs to control access levels.</p>
@@ -162,6 +242,8 @@
 
   </main>
 </div>
+
+<div id="toastContainer" class="toast-container"></div>
 
 <script src="data.js"></script>
 <script src="app.js"></script>

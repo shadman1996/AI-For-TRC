@@ -1,0 +1,16 @@
+{
+    "vu1103do": {
+        "role": "wag",
+        "modules": [
+            "chat",
+            "tickets",
+            "directory",
+            "form",
+            "links",
+            "sccm",
+            "mist",
+            "ad",
+            "wayfinding"
+        ]
+    }
+}
