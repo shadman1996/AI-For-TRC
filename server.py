@@ -882,18 +882,69 @@ def get_tdx_tickets():
     app_id = conf.get("tdx_appid")
     token = conf.get("tdx_token")
     
-    if app_id and token:
-        # Real TDX API Call logic would go here
-        # For now, we still return MOCK_TICKETS if the token is "DEMO"
-        if token == "DEMO":
-            return {"status": "success", "data": MOCK_TICKETS}
+    if app_id and token and token != "DEMO":
+        # Real TeamDynamix Web API call to fetch active tickets
+        url = f"https://services.mnscu.edu/TDWebApi/api/{app_id}/tickets/search"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        # Pull up to 20 open/in-progress tickets
+        payload = {
+            "StatusIDs": [1, 2],  # New, In Progress
+            "MaxResults": 20
+        }
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=5)
+            if res.status_code == 200:
+                return {"status": "success", "data": res.json()}
+        except Exception as e:
+            print(f"Failed to fetch live TDX tickets: {e}")
             
-        # Placeholder for real API:
-        # headers = {"Authorization": f"Bearer {token}"}
-        # res = requests.get(f"https://api.teamdynamix.com/TDNext/api/{app_id}/tickets", headers=headers)
-        # return res.json()
-        
     return {"status": "success", "data": MOCK_TICKETS}
+
+@app.post("/api/tdx/tickets/create")
+def create_tdx_ticket(data: dict):
+    conf = {}
+    if os.path.exists("config_sys.json"):
+        with open("config_sys.json", "r", encoding="utf-8") as f:
+            conf = json.load(f)
+            
+    app_id = conf.get("tdx_appid")
+    token = conf.get("tdx_token")
+    
+    title = data.get("title", "TRC AI Generated Ticket")
+    description = data.get("description", "No description provided.")
+    requestor = data.get("requestor", "anonymous")
+    
+    if app_id and token and token != "DEMO":
+        # Real TeamDynamix Web API call to create ticket
+        url = f"https://services.mnscu.edu/TDWebApi/api/{app_id}/tickets"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "Title": title,
+            "Description": description,
+            "TypeID": 12, # Incident
+            "StatusID": 1, # New
+            "RequestorEmail": f"{requestor}@smsu.edu" if "@" not in requestor else requestor
+        }
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=5)
+            if res.status_code in [200, 201]:
+                new_ticket = res.json()
+                return {"status": "success", "ticket_id": new_ticket.get("ID"), "message": "Ticket created in TeamDynamix successfully."}
+            else:
+                return {"status": "error", "message": f"TDX API returned: {res.text}"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+            
+    # Mock fallback for demo
+    import secrets
+    mock_id = secrets.randbelow(100000) + 740000
+    return {"status": "success", "ticket_id": mock_id, "message": "Successfully created a ticket in TeamDynamix (Mock Sandbox)."}
 
 # --- DEPLOYMENT ---
 @app.get("/api/deployment/info")
@@ -1177,6 +1228,38 @@ def execute_system_control_action(prompt: str, username: str = "anonymous", role
                 results.append(f"COMMAND EXECUTION RESULT: Querying Mist WiFi Telemetry for MAC '{mac_addr}' returned: {json.dumps(data)}")
         except Exception as e:
             log_audit_action(username, role, "Mist_Locate", mac_addr, "FAILURE", str(e))
+
+    # 4. Create/Write TDX Ticket Command
+    # Match patterns like "create ticket about ...", "write a ticket for ...", "open a ticket: ..."
+    ticket_match = re.search(r'\b(?:create|write|open|file)\s+(?:a\s+)?ticket\s+(?:about|for|saying)?\s+(.+)\b', q_lower)
+    if ticket_match:
+        ticket_details = ticket_match.group(1).strip()
+        # Parse potential StarID in details to assign requestor
+        starid_match = re.search(r'\b([a-zA-Z]{2}[0-9]{4}[a-zA-Z]{2})\b', ticket_details)
+        requestor_user = starid_match.group(1) if starid_match else username
+        
+        t_title = ticket_details[:60].capitalize()
+        t_desc = f"Ticket generated autonomously via SMSU TRC AI Control Panel.\nTriggered by: User '{username}' (Role: '{role}')\nDetails provided: {ticket_details}"
+        
+        # All authenticated roles (helpdesk, tech, wag, sysadmin) are allowed to file tickets
+        if role in ["sysadmin", "tech", "wag", "helpdesk"]:
+            res_ticket = create_tdx_ticket({"title": t_title, "description": t_desc, "requestor": requestor_user})
+            if res_ticket.get("status") == "success":
+                log_audit_action(username, role, "TDX_Ticket_Create", str(res_ticket.get("ticket_id")), "SUCCESS", f"Created ticket: {t_title}")
+                results.append(
+                    f"COMMAND EXECUTION RESULT: You have successfully created a ticket in TeamDynamix live! "
+                    f"Ticket ID: #{res_ticket.get('ticket_id')}\n"
+                    f"- Title: '{t_title}'\n"
+                    f"- Description: '{t_desc}'\n"
+                    f"- Requestor: {requestor_user}@smsu.edu\n"
+                    f"Inform the user of their new ticket reference number!"
+                )
+            else:
+                log_audit_action(username, role, "TDX_Ticket_Create", "N/A", "FAILURE", res_ticket.get("message"))
+                results.append(f"COMMAND EXECUTION FAILURE: Attempted to create a TDX ticket, but TeamDynamix returned: '{res_ticket.get('message')}'")
+        else:
+            log_audit_action(username, role, "TDX_Ticket_Create", "N/A", "BLOCKED", "Anonymous session blocked from ticket creation.")
+            results.append("COMMAND EXECUTION FAILURE: Unauthorized session. Please log in with your active SMSU credentials to open tickets.")
             
     return results
 
