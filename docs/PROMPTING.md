@@ -1,58 +1,38 @@
-# 🎙️ AI Prompting Guide
+# 🎙️ TRC AI: Executive Prompting Guide
 
-The TRC AI Assistant is designed to understand natural language. You can interact with it via the **Chat View** or the **✨ AI Command Bar**.
-
-## 🏇 Best Practices
-- **Be Specific**: Instead of "check a user", say "Who is vg6340ah?".
-- **Use Identifiers**: Always provide StarIDs, Computer Names (e.g., PC-123), or MAC addresses for technical lookups.
-- **Context Matters**: If you are troubleshooting a ticket, mention the ticket ID or describe the error message.
+The TRC AI is not just a chatbot; it is a **Command-and-Control Interface** for SMSU IT operations. Use the following natural language patterns to trigger automated workflows.
 
 ---
 
-## 🔍 Search & Lookup Intents
-
-### 👤 User & StarID Lookups
-The AI automatically detects StarIDs and user names.
-- `Find user shadman` -> Searches AD for "shadman".
-- `Who is vg6340ah?` -> Pulls profile from Active Directory.
-- `Who is Nicole Quaas?` -> Resolves their department, designation, and room instantly.
-- `Deep search vg6340ah` -> **(Admin/Tech only)** Scrapes the MinnState StarID Portal for real-time details (TechID, Barcodes, Affiliations).
-
-### 💻 Device & SCCM Lookups
-Find hardware info, OS versions, and last logon details.
-- `Check SCCM for PC-TRC-01`
-- `Find computer smsu-12345`
-- `Where is the last logon for PC-55?`
-- `08-8F-C3-06-FD-F9 search this device` -> **(Conversational Routing)** The AI automatically extracts the MAC address out of loose sentences, redirects your tab, and executes our high-performance two-step lookup pipeline!
-
-### 🌐 Network, IPs, & WiFi (Mist)
-- `Check Mist status for 00:11:22:33:44:55`
-- `Wifi status of vg6340ah's phone`
-- `Is 10.5.40.18 a campus IP?` -> **(Instant Subnet Analysis)** The AI analyzes private/public subnets instantly (recognizing internal workstations and administrative networks).
-- `What is the procedure for activating a network port in SC 219?` -> **(Port Patching Guide)** The AI provides official ITS Network patching steps.
-- `Who is in office SC 219?` -> **(Room/Office Directory)** The AI connects rooms to directory listings in real-time.
-
+### 🏛️ 1. Knowledge & History (Infinite Memory)
+The AI has ingested **173 KB articles** and **5,475 historical tickets**.
+*   **KB Search:** *"What is ISRS?"* or *"How do I install SPSS on Mac?"*
+*   **Historical Analysis:** *"How do we usually handle PaperCut toner issues?"*
+*   **Expert Guidance:** *"Who is the primary contact for Chemistry equipment backups?"*
 
 ---
 
-## ⚙️ Management Commands (Tech/Admin Only)
-
-### 🖥️ Remote Desktop Actions
-You can trigger remote actions on computers found in SCCM.
-- `Sync policy for PC-123` -> Triggers Machine Policy refresh.
-- `Scan updates on PC-123` -> Forces a Windows Update scan.
-- `Evaluate updates for PC-123` -> Checks compliance for deployed updates.
+### 💻 2. Asset & Device Control (SCCM + Mist)
+*   **Locate Device:** *"Where is computer BA-LAB-01?"* or *"Locate MAC 00:11:22:33:44:55"*
+*   **Remote Action:** *"Sync SCCM policy on ST-219-PC"* or *"Scan for updates on laptop LT-5521"*
+*   **WiFi Telemetry:** *"Check WiFi status for my phone [MAC]"*
 
 ---
 
-## 🗺️ Wayfinding & Campus Help
-- `Where is BA 123?`
-- `How do I get to the Library from BA?`
-- `Find a map of the Science building.`
+### 🧹 3. System Maintenance (Bulk Actions)
+*   **Profile Cleanup:** *"Cleanup user profiles on BA-LAB-01"* (Removes accounts > 6 months old).
+*   **Session Management:** *"Logoff extra users on all desktops"* (Resolves simultaneous login slowdowns campus-wide).
 
 ---
 
-## 📖 Knowledge Base (FAQ)
-- `How do I set up eduroam?`
-- `Password reset instructions for StarID.`
-- `What is the phone number for the Help Desk?`
+### 🎫 4. TeamDynamix Integration (Live Bridge)
+*   **Create Ticket:** *"Open a ticket about the printer in the library being jammed"*
+*   **User Search:** *"Show me contact info for StarID vg6340ah"*
+*   **Inventory Check:** *"What is the hostname for asset tag 1765817?"*
+
+---
+
+### 🔒 5. Administrative Guards
+*   **Role Requirements:** Control actions (Restart, Cleanup, Sync) require the **`sysadmin`** role.
+*   **Audit Logging:** Every administrative command is recorded in the **`audit_trail.log`**.
+*   **Session Security:** All POST requests require a valid session token propagated from the frontend.
