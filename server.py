@@ -1071,6 +1071,58 @@ def enrich_ai_prompt(prompt: str) -> str:
             "5. Wi-Fi Connection: Verify the device is attempting to authenticate to the 'Eduroam' network using active, unlocked StarID credentials."
         )
 
+    # 6. Dynamic TDX Database Lookups (RAG via Local CSV Exports)
+    # Check for User/StarID patterns in prompt
+    starid_match = re.search(r'\b[a-zA-Z]{2}[0-9]{4}[a-zA-Z]{2}\b', prompt)
+    if starid_match:
+        starid = starid_match.group(0)
+        tdx_users = database.query_tdx_user(starid)
+        if tdx_users:
+            u = tdx_users[0]
+            enrichments.append(
+                f"FACT: Found local TeamDynamix User profile for StarID '{starid}':\n"
+                f"- Name: {u.get('FullName')} ({u.get('FirstName')} {u.get('LastName')})\n"
+                f"- Title: {u.get('Title')} (Department: {u.get('Department') or 'N/A'})\n"
+                f"- Email: {u.get('PrimaryEmail')} (Alternate: {u.get('AlternateEmail') or 'N/A'})\n"
+                f"- Phone: {u.get('Phone')}\n"
+                f"- Office Location: {u.get('Location')} Room {u.get('Room') or 'N/A'}\n"
+                f"- Account Active in TDX: {u.get('IsActive')}\n"
+                f"- Technical ID (TechID): {u.get('TechID')}"
+            )
+    else:
+        # Check if they mention specific general names to search TDX users
+        for word in prompt.split():
+            clean_word = word.strip("?,.!\"'()[]")
+            if len(clean_word) > 4 and clean_word.isalnum() and not any(k in clean_word.lower() for k in ["hello", "there", "about", "query", "search", "admin", "works", "located"]):
+                tdx_users = database.query_tdx_user(clean_word)
+                if tdx_users:
+                    u = tdx_users[0]
+                    enrichments.append(
+                        f"FACT: Found local TeamDynamix User matching '{clean_word}': "
+                        f"{u.get('FullName')} ({u.get('Title')}, Office: {u.get('Location')} Room {u.get('Room') or 'N/A'}, Phone: {u.get('Phone')}, Email: {u.get('PrimaryEmail')})."
+                    )
+                    break
+
+    # Check for Asset Tag or Computer Name patterns
+    asset_words = [w for w in prompt.split() if any(c.isdigit() for c in w) or "pc" in w.lower() or "ws" in w.lower() or "tag" in w.lower()]
+    for aw in asset_words:
+        clean_aw = aw.strip("?,.!\"'()[]")
+        if len(clean_aw) >= 3:
+            tdx_assets = database.query_tdx_asset(clean_aw)
+            if tdx_assets:
+                ast = tdx_assets[0]
+                enrichments.append(
+                    f"FACT: Found local TeamDynamix Asset matching query '{clean_aw}':\n"
+                    f"- Device Name: {ast.get('Name') or 'N/A'}\n"
+                    f"- Asset Tag: {ast.get('Tag')}\n"
+                    f"- Serial Number: {ast.get('SerialNumber')}\n"
+                    f"- Manufacturer / Model: {ast.get('Manufacturer')} {ast.get('ProductModel')}\n"
+                    f"- Asset Status: {ast.get('Status')}\n"
+                    f"- Location Assigned: {ast.get('Location')} Room {ast.get('Room') or 'N/A'}\n"
+                    f"- Primary User / Owner: {ast.get('Owner')} (Dept: {ast.get('OwnerDepartment')})"
+                )
+                break
+
     if enrichments:
         enrichment_block = "\n".join(enrichments)
         return f"{prompt}\n\n[BACKGROUND REAL-TIME CONTEXT FROM CAMPUS SYSTEMS]\n{enrichment_block}"

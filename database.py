@@ -147,6 +147,100 @@ def get_all_kb():
     conn.close()
     return [e["content"] for e in entries]
 
+# --- TDX LOCAL DATABASE INTEGRATION ---
+def query_tdx_user(query_str):
+    tdx_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "TDX"))
+    users_csv = os.path.join(tdx_dir, "TDXUsers.csv")
+    if not os.path.exists(users_csv):
+        return []
+        
+    query_str = query_str.lower().strip()
+    results = []
+    
+    try:
+        with open(users_csv, "r", encoding="utf-8-sig") as f:
+            import csv
+            reader = csv.DictReader(f)
+            for row in reader:
+                username = row.get("UserName", "") or ""
+                fullname = row.get("FullName", "") or ""
+                beid = row.get("BEID", "") or ""
+                
+                if (query_str in username.lower() or 
+                    query_str in fullname.lower() or 
+                    query_str == beid.lower()):
+                    
+                    results.append({
+                        "UID": row.get("UID"),
+                        "StarID": username,
+                        "FullName": fullname,
+                        "FirstName": row.get("FirstName"),
+                        "LastName": row.get("LastName"),
+                        "PrimaryEmail": row.get("PrimaryEmail"),
+                        "AlternateEmail": row.get("AlternateEmail"),
+                        "Title": row.get("Title"),
+                        "Phone": row.get("PrimaryPhone") or row.get("WorkPhone") or row.get("MobilePhone") or "N/A",
+                        "Location": row.get("LocationName"),
+                        "Room": row.get("LocationRoomName"),
+                        "IsActive": row.get("IsActive"),
+                        "TechID": beid,
+                        "Source": "TDX Database Dump"
+                    })
+    except Exception as e:
+        print("Error reading TDX Users:", e)
+        
+    return results
+
+def query_tdx_asset(query_str):
+    tdx_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "TDX"))
+    assets_csv = os.path.join(tdx_dir, "TDXAssets.csv")
+    if not os.path.exists(assets_csv):
+        return []
+        
+    query_str = query_str.lower().strip()
+    # Strip colons or dashes from MAC queries to make it highly search resilient
+    query_clean = query_str.replace(":", "").replace("-", "")
+    results = []
+    
+    try:
+        with open(assets_csv, "r", encoding="utf-8-sig") as f:
+            import csv
+            reader = csv.DictReader(f)
+            for row in reader:
+                tag = row.get("Tag", "") or ""
+                serial = row.get("SerialNumber", "") or ""
+                name = row.get("Name", "") or ""
+                attributes = row.get("Attributes", "") or ""
+                
+                tag_match = query_str in tag.lower()
+                serial_match = query_str in serial.lower()
+                name_match = query_str in name.lower()
+                
+                attr_match = False
+                if query_clean and len(query_clean) >= 12:
+                    attr_match = query_clean in attributes.lower().replace(":", "").replace("-", "")
+                    
+                if tag_match or serial_match or name_match or attr_match:
+                    results.append({
+                        "ID": row.get("ID"),
+                        "Tag": tag,
+                        "SerialNumber": serial,
+                        "Name": name,
+                        "ProductModel": row.get("ProductModelName"),
+                        "Manufacturer": row.get("ManufacturerName"),
+                        "Status": row.get("StatusName"),
+                        "Location": row.get("LocationName"),
+                        "Room": row.get("LocationRoomName"),
+                        "Owner": row.get("RequestingCustomerName") or row.get("OwningCustomerName") or "N/A",
+                        "OwnerDepartment": row.get("RequestingDepartmentName") or row.get("OwningDepartmentName") or "N/A",
+                        "CreatedDate": row.get("CreatedDate"),
+                        "Source": "TDX Asset Catalog"
+                    })
+    except Exception as e:
+        print("Error reading TDX Assets:", e)
+        
+    return results
+
 if __name__ == "__main__":
     init_db()
     migrate_data()
