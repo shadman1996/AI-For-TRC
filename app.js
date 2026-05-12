@@ -1030,7 +1030,11 @@ async function streamAIResponse(query, typingId) {
   const bubble = document.getElementById(`streaming-${typingId}`);
   
   try {
-    const payload = { prompt: query, history: chatHistory };
+    const payload = { 
+      prompt: query, 
+      history: chatHistory,
+      token: currentUser ? currentUser.token : null
+    };
     const controller = new AbortController();
     const streamTimeout = setTimeout(() => controller.abort(), 20000);
 
@@ -1102,7 +1106,10 @@ async function getAIPrediction(text) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ 
+        prompt,
+        token: currentUser ? currentUser.token : null
+      })
     });
     clearTimeout(timeoutId);
     
@@ -1456,7 +1463,10 @@ async function generateAIBriefing(ticket) {
     const res = await fetch('/api/ai/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ 
+        prompt,
+        token: currentUser ? currentUser.token : null
+      })
     });
     
     if (res.ok) {

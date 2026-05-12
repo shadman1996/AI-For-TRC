@@ -82,6 +82,24 @@ class AIAdapter:
                 return res.json()["choices"][0]["message"]["content"]
             except Exception as e:
                 return f"AI Engine (OpenAI) failed: {str(e)}"
+
+        # 3. vLLM / TGI Private GPU Cluster Provider (OpenAI Compatible)
+        elif engine.get("provider") in ["vllm", "tgi", "private_cluster"]:
+            try:
+                headers = {}
+                api_key = engine.get("api_key")
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                
+                endpoint = engine.get("endpoint", "http://127.0.0.1:8000/v1/chat/completions")
+                res = requests.post(endpoint, headers=headers, json={
+                    "model": engine["model"],
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3
+                }, timeout=15)
+                return res.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                return f"AI Engine (vLLM/TGI Private GPU Cluster) failed: {str(e)}"
                 
         return "AI Engine not configured or unsupported provider."
 
@@ -1011,18 +1029,44 @@ def web_search(q: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def execute_system_control_action(prompt: str) -> list:
+def log_audit_action(username: str, role: str, action: str, target: str, status: str, details: str):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_line = f"[{timestamp}] USER: {username} | ROLE: {role} | ACTION: {action} | TARGET: {target} | STATUS: {status} | DETAILS: {details}\n"
+    try:
+        with open("audit_trail.log", "a", encoding="utf-8") as f:
+            f.write(log_line)
+    except Exception as e:
+        print(f"Failed to write to audit trail log: {e}")
+
+def execute_system_control_action(prompt: str, username: str = "anonymous", role: str = "helpdesk") -> list:
     """
     Parses the user prompt for administrative control commands.
-    If found, executes the respective system command (Active Directory, SCCM, Wi-Fi)
-    and returns a list of result fact blocks to inject into the AI context.
+    If found, verifies that the user has 'sysadmin' role. If authorized,
+    executes the respective system command (Active Directory, SCCM, Wi-Fi) and logs an audit.
+    If unauthorized, logs a blocked audit attempt and blocks the execution.
     """
     results = []
     q_lower = prompt.lower()
     
-    # 1. Unlock Active Directory Account Command
-    # Match phrases like "unlock cu0856jz", "unlock account vg6340ah", "unlock starid vg6340ah"
+    # Identify commands
     unlock_match = re.search(r'\b(?:unlock|enable|reset)\s+(?:starid\s+|account\s+|user\s+)?([a-zA-Z]{2}[0-9]{4}[a-zA-Z]{2})\b', q_lower)
+    sccm_match = re.search(r'\b(?:sync|policy|scan|update|trigger)\s+(?:policy\s+|updates\s+)?(?:on\s+)?(?:computer\s+|pc\s+)?(pc-[0-9]{5}|ws-[0-9]{3,5}|laptop-[0-9]{3,5})\b', q_lower)
+    mac_match = re.search(r'\b([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})\b', prompt)
+    
+    if unlock_match or sccm_match or mac_match:
+        # Enforce Guard: Only System Administrators (sysadmin role) are authorized to trigger control panel commands
+        if role != "sysadmin":
+            action_type = "AD_Unlock" if unlock_match else ("SCCM_Trigger" if sccm_match else "Mist_Locate")
+            target_val = unlock_match.group(1) if unlock_match else (sccm_match.group(1) if sccm_match else mac_match.group(0))
+            log_audit_action(username, role, action_type, target_val, "BLOCKED", "Insufficient privileges - blocked by AI Control Panel Guard.")
+            results.append(
+                f"COMMAND EXECUTION FAILURE: The user '{username}' (Role: '{role}') attempted to execute an administrative control operation ({action_type} on target '{target_val}'), "
+                f"but was BLOCKED due to insufficient privileges. Explain to the user that only authorized System Administrators (sysadmin) can execute physical control actions, "
+                f"and that this security violation has been logged in the audit trail."
+            )
+            return results
+
+    # 1. Unlock Active Directory Account Command
     if unlock_match:
         starid = unlock_match.group(1)
         # Execute PowerShell unlock command
@@ -1039,21 +1083,23 @@ def execute_system_control_action(prompt: str) -> list:
             res = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True, timeout=10)
             out = res.stdout.strip()
             if out == "SUCCESS":
+                log_audit_action(username, role, "AD_Unlock", starid, "SUCCESS", "Unlocked user AD account.")
                 results.append(f"COMMAND EXECUTION RESULT: You have successfully executed the Active Directory command 'Unlock-ADAccount -Identity {starid}' via the AI Control Panel. The user account is now UNLOCKED.")
             else:
                 # Mock success or fallback if Active Directory module is missing but user exists in our local TDX/directory cache
                 import database
                 local_users = database.query_tdx_user(starid)
                 if local_users:
+                    log_audit_action(username, role, "AD_Unlock", starid, "SUCCESS (MOCK)", "Reset directory lock status.")
                     results.append(f"COMMAND EXECUTION RESULT: You have successfully reset the Lock Status to 'Unlocked' for StarID '{starid}' in the campus directories via the AI Control Panel.")
                 else:
+                    log_audit_action(username, role, "AD_Unlock", starid, "FAILURE", f"Server error: {out}")
                     results.append(f"COMMAND EXECUTION FAILURE: Attempted to unlock StarID '{starid}', but the server returned: '{out or 'ActiveDirectory Module not available'}'. Please inform the user.")
         except Exception as e:
+            log_audit_action(username, role, "AD_Unlock", starid, "FAILURE", str(e))
             results.append(f"COMMAND EXECUTION FAILURE: Failed to execute unlock command: {e}")
 
     # 2. SCCM Remote Actions Command
-    # Match "sync policy on PC-12345", "trigger policy sync on PC-99999", "scan updates on WS-102"
-    sccm_match = re.search(r'\b(?:sync|policy|scan|update|trigger)\s+(?:policy\s+|updates\s+)?(?:on\s+)?(?:computer\s+|pc\s+)?(pc-[0-9]{5}|ws-[0-9]{3,5}|laptop-[0-9]{3,5})\b', q_lower)
     if sccm_match:
         pc_name = sccm_match.group(1).upper()
         # Determine action type
@@ -1106,15 +1152,16 @@ def execute_system_control_action(prompt: str) -> list:
                 "SUCCESS"
                 """
                 res_trig = subprocess.run(["powershell", "-Command", ps_trigger], capture_output=True, text=True, timeout=10)
+                log_audit_action(username, role, f"SCCM_{action_type}", pc_name, "SUCCESS", f"Triggered client schedule on ResourceID {resource_id}.")
                 results.append(f"COMMAND EXECUTION RESULT: You have successfully triggered SCCM Action '{action_type}' (TriggerSchedule: {guid}) on device '{pc_name}' (ResourceID: {resource_id}) via the AI Control Panel.")
             else:
+                log_audit_action(username, role, f"SCCM_{action_type}", pc_name, "FAILURE", "Device not found in inventory.")
                 results.append(f"COMMAND EXECUTION FAILURE: Attempted to trigger SCCM action, but computer '{pc_name}' was not found in SCCM or local TDX inventory.")
         except Exception as e:
+            log_audit_action(username, role, f"SCCM_{action_type}", pc_name, "FAILURE", str(e))
             results.append(f"COMMAND EXECUTION FAILURE: Failed to trigger SCCM action: {e}")
 
     # 3. Locate Wi-Fi Device Command
-    # Match locate or find MAC Address
-    mac_match = re.search(r'\b([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})\b', prompt)
     if mac_match:
         mac_addr = mac_match.group(0)
         # Execute Mist API lookup internally
@@ -1126,18 +1173,19 @@ def execute_system_control_action(prompt: str) -> list:
             response = requests.get(url, headers={"Authorization": f"Token {mist_token}"}, timeout=5)
             if response.status_code == 200:
                 data = response.json()
+                log_audit_action(username, role, "Mist_Locate", mac_addr, "SUCCESS", "Located wireless adapter coordinates.")
                 results.append(f"COMMAND EXECUTION RESULT: Querying Mist WiFi Telemetry for MAC '{mac_addr}' returned: {json.dumps(data)}")
         except Exception as e:
-            pass
+            log_audit_action(username, role, "Mist_Locate", mac_addr, "FAILURE", str(e))
             
     return results
 
-def enrich_ai_prompt(prompt: str) -> str:
+def enrich_ai_prompt(prompt: str, username: str = "anonymous", role: str = "helpdesk") -> str:
     enrichments = []
     q_lower = prompt.lower()
     
-    # Check and run Control Panel Commands first
-    command_results = execute_system_control_action(prompt)
+    # Check and run Control Panel Commands first (Enforced Authorization Checking inside)
+    command_results = execute_system_control_action(prompt, username, role)
     for res in command_results:
         enrichments.append(f"FACT: {res}")
     
@@ -1258,7 +1306,16 @@ def enrich_ai_prompt(prompt: str) -> str:
 @app.post("/api/ai/generate")
 def ai_proxy_generate(data: dict):
     prompt = data.get("prompt", "")
-    enriched = enrich_ai_prompt(prompt)
+    token = data.get("token")
+    
+    # Resolve user session
+    username = "anonymous"
+    role = "helpdesk"
+    if token and token in SESSIONS:
+        username = SESSIONS[token].get("username", "anonymous")
+        role = SESSIONS[token].get("role", "helpdesk")
+        
+    enriched = enrich_ai_prompt(prompt, username, role)
     
     system_instructions = (
         "You are the TRC AI Assistant at Southwest Minnesota State University (SMSU). "
@@ -1280,9 +1337,17 @@ def ai_proxy_stream(data: dict):
     # Retrieve data parameters
     prompt = data.get("prompt", "")
     history = data.get("history", [])
+    token = data.get("token")
+    
+    # Resolve user session
+    username = "anonymous"
+    role = "helpdesk"
+    if token and token in SESSIONS:
+        username = SESSIONS[token].get("username", "anonymous")
+        role = SESSIONS[token].get("role", "helpdesk")
     
     # Process the prompt through our real-time systems control panel and RAG enrichments
-    enriched = enrich_ai_prompt(prompt)
+    enriched = enrich_ai_prompt(prompt, username, role)
 
     system_instructions = (
         "You are the TRC AI Assistant at Southwest Minnesota State University (SMSU). "
@@ -1308,36 +1373,64 @@ def ai_proxy_stream(data: dict):
 
 
 
+    engine = CONFIG.get("ai_engine", {})
+    provider = engine.get("provider", "ollama")
+
     def generate():
-        if not AIAdapter._check_ollama_alive():
-            yield "AI engine is offline right now. But I can still help! Try asking about a specific issue like 'student can't log in' or 'how do I get to CH104'."
-            return
-            
-        try:
-            res = requests.post(engine["endpoint"], json={
-                "model": engine["model"],
-                "prompt": full_prompt,
-                "stream": True,
-                "options": {"temperature": 0.3}
-            }, stream=True, timeout=(2, 5))  # (connect=2s, read=5s)
-            
-            for line in res.iter_lines():
-                if line:
-                    chunk = json.loads(line.decode("utf-8"))
-                    if "response" in chunk:
-                        yield chunk["response"]
-                    if "error" in chunk:
-                        yield f"AI Error: {chunk['error']}. I'm trying to fix this on the backend!"
-                    if chunk.get("done"):
-                        break
-            if not res.ok and res.status_code != 200:
-                yield "I'm having a bit of trouble reaching my brain (AI Engine). I can still help with campus lookups and standard procedures though!"
-        except requests.exceptions.ConnectionError:
-            yield "AI engine is offline right now. But I can still help! Try asking about a specific issue like 'student can't log in' or 'how do I get to CH104'."
-        except requests.exceptions.Timeout:
-            yield "AI is taking too long to respond. Try being more specific about what you need."
-        except Exception as e:
-            yield f"Something went wrong with the AI. Try rephrasing your question."
+        if provider == "ollama":
+            if not AIAdapter._check_ollama_alive():
+                yield "AI engine is offline right now. But I can still help! Try asking about a specific issue like 'student can't log in' or 'how do I get to CH104'."
+                return
+            try:
+                res = requests.post(engine["endpoint"], json={
+                    "model": engine["model"],
+                    "prompt": full_prompt,
+                    "stream": True,
+                    "options": {"temperature": 0.3}
+                }, stream=True, timeout=(2, 5))
+                
+                for line in res.iter_lines():
+                    if line:
+                        chunk = json.loads(line.decode("utf-8"))
+                        if "response" in chunk:
+                            yield chunk["response"]
+                        if chunk.get("done"):
+                            break
+            except Exception as e:
+                yield "I'm having trouble reaching the local AI Engine. I can still help with campus lookups though!"
+        elif provider in ["vllm", "tgi", "private_cluster", "openai"]:
+            try:
+                headers = {}
+                api_key = engine.get("api_key")
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                
+                endpoint = engine.get("endpoint", "http://127.0.0.1:8000/v1/chat/completions")
+                res = requests.post(endpoint, headers=headers, json={
+                    "model": engine["model"],
+                    "messages": [{"role": "user", "content": full_prompt}],
+                    "temperature": 0.3,
+                    "stream": True
+                }, stream=True, timeout=(2, 10))
+                
+                for line in res.iter_lines():
+                    if line:
+                        decoded = line.decode("utf-8").strip()
+                        if decoded.startswith("data:"):
+                            data_str = decoded[5:].strip()
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data_str)
+                                content = chunk["choices"][0]["delta"].get("content", "")
+                                if content:
+                                    yield content
+                            except:
+                                pass
+            except Exception as e:
+                yield f"I'm having trouble connecting to the Private GPU Cluster: {str(e)}."
+        else:
+            yield "The configured AI engine provider does not support streaming yet."
 
     return StreamingResponse(generate(), media_type="text/plain")
 
