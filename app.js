@@ -96,7 +96,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         formData.append("file", file);
         
         try {
-          const res = await fetch('/api/kb/upload', {
+          const token = currentUser ? currentUser.token : '';
+          const res = await fetch(`/api/kb/upload?token=${token}`, {
             method: 'POST',
             body: formData
           });
@@ -443,7 +444,8 @@ async function checkEnterpriseTools(text) {
     
     appendMessage(`🧠 Saving to permanent memory...`, 'ai');
     try {
-      const res = await fetch(`/api/kb/learn`, {
+      const token = currentUser ? currentUser.token : '';
+      const res = await fetch(`/api/kb/learn?token=${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: content })
@@ -1989,7 +1991,7 @@ async function saveSystemConfig() {
   };
 
   try {
-    const res = await fetch('/api/admin/save-config', {
+    const res = await fetch(`/api/admin/save-config?token=${currentUser.token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -2127,6 +2129,7 @@ async function updateProfileUI() {
 let SYS_CONFIG = null;
 
 async function loadAdminUsers() {
+  if (!currentUser) return;
   try {
     if (!SYS_CONFIG) {
       const configRes = await fetch('/api/config');
@@ -2135,7 +2138,7 @@ async function loadAdminUsers() {
         SYS_CONFIG = configData.config;
       }
     }
-    const res = await fetch('/api/admin/users');
+    const res = await fetch(`/api/admin/users?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       renderAdminList(data.roles);
@@ -2201,7 +2204,7 @@ async function deleteUser(username) {
   if (!confirm(`Are you sure you want to remove permissions for ${username}?`)) return;
   
   try {
-    const res = await fetch(`/api/admin/users/${username}`, {
+    const res = await fetch(`/api/admin/users/${username}?token=${currentUser.token}`, {
       method: 'DELETE'
     });
     const data = await res.json();
@@ -2222,7 +2225,7 @@ async function adminAddUser() {
   if (!username) return;
   
   try {
-    await fetch('/api/admin/users', {
+    await fetch(`/api/admin/users?token=${currentUser.token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, role, modules })

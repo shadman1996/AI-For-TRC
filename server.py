@@ -5,7 +5,7 @@ import os
 import requests
 import csv
 import uuid
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Depends
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -203,16 +203,14 @@ def login(payload: LoginPayload):
     env["AD_PASS"] = payload.password
     
     try:
-        # Determine role: Custom > AD Fallback
+        # Determine role: Custom > Guest Restricted Fallback
         user_data = database.get_user(u)
         if user_data:
             role = user_data["role"]
         elif "wag" in u or "admin" in u or "shadman" in u:
-            role = "sysadmin"
-        elif "tech" in u:
-            role = "tech"
+            role = "sysadmin"  # Maintain Admin override
         else:
-            role = "helpdesk"
+            role = "guest"     # Unassigned AD users fallback to read-only guest
             
         try:
             result = subprocess.run(["powershell", "-Command", ps_script], env=env, capture_output=True, text=True, timeout=10)
@@ -236,16 +234,26 @@ def login(payload: LoginPayload):
     except Exception as e:
         return {"status": "error", "message": "An unexpected error occurred during login."}
 
+def get_session_user(token: str = Query(None)):
+    if not token or token not in SESSIONS:
+        raise HTTPException(status_code=401, detail="Unauthorized session. Please log in.")
+    return SESSIONS[token]
+
 @app.get("/api/admin/users")
-def get_admin_users():
+def get_admin_users(user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
     return {"status": "success", "roles": database.get_all_users()}
 
 @app.get("/api/config")
 def get_config():
+    # Publicly readable configuration for UI rendering
     return {"status": "success", "config": CONFIG}
 
 @app.post("/api/admin/users")
-def update_admin_user(data: dict):
+def update_admin_user(data: dict, user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
     username = data["username"].lower()
     role = data["role"]
     modules = data.get("modules", CONFIG["default_module_permissions"].get(role, []))
@@ -253,7 +261,9 @@ def update_admin_user(data: dict):
     return {"status": "success"}
 
 @app.delete("/api/admin/users/{username}")
-def delete_admin_user(username: str):
+def delete_admin_user(username: str, user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
     database.delete_user(username)
     return {"status": "success"}
 
@@ -764,7 +774,9 @@ def ingest_pending_files():
             database.add_kb_entry(entry, "File Ingestion")
 
 @app.post("/api/kb/upload")
-async def upload_kb_file(file: UploadFile = File(...)):
+async def upload_kb_file(file: UploadFile = File(...), user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Knowledge ingestion restricted.")
     content = await file.read()
     try:
         text = content.decode("utf-8", errors="ignore")
@@ -806,7 +818,9 @@ async def upload_kb_file(file: UploadFile = File(...)):
     return {"status": "success", "message": f"Successfully learned from {file.filename} ({len(new_entries)} entries)"}
 
 @app.post("/api/kb/learn")
-def learn_kb(payload: LearnPayload):
+def learn_kb(payload: LearnPayload, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Knowledge ingestion restricted.")
     ingest_pending_files() # Check for files before learning
     try:
         database.add_kb_entry(payload.text, "Manual Entry")
@@ -866,7 +880,9 @@ def get_system_config():
     return {"status": "success", "data": {}}
 
 @app.post("/api/admin/save-config")
-def save_system_config(payload: dict):
+def save_system_config(payload: dict, user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
     with open("config_sys.json", "w") as f:
         json.dump(payload, f, indent=4)
     return {"status": "success"}
@@ -903,8 +919,8 @@ def get_tdx_tickets():
             
     return {"status": "success", "data": MOCK_TICKETS}
 
-@app.post("/api/tdx/tickets/create")
-def create_tdx_ticket(data: dict):
+def _execute_tdx_ticket_creation(data: dict):
+    # Core logic helper for ticket creation
     conf = {}
     if os.path.exists("config_sys.json"):
         with open("config_sys.json", "r", encoding="utf-8") as f:
@@ -945,6 +961,12 @@ def create_tdx_ticket(data: dict):
     import secrets
     mock_id = secrets.randbelow(100000) + 740000
     return {"status": "success", "ticket_id": mock_id, "message": "Successfully created a ticket in TeamDynamix (Mock Sandbox)."}
+
+@app.post("/api/tdx/tickets/create")
+def create_tdx_ticket_api(data: dict, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag", "helpdesk"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Unauthorized to create tickets.")
+    return _execute_tdx_ticket_creation(data)
 
 # --- DEPLOYMENT ---
 @app.get("/api/deployment/info")
@@ -1243,7 +1265,7 @@ def execute_system_control_action(prompt: str, username: str = "anonymous", role
         
         # All authenticated roles (helpdesk, tech, wag, sysadmin) are allowed to file tickets
         if role in ["sysadmin", "tech", "wag", "helpdesk"]:
-            res_ticket = create_tdx_ticket({"title": t_title, "description": t_desc, "requestor": requestor_user})
+            res_ticket = _execute_tdx_ticket_creation({"title": t_title, "description": t_desc, "requestor": requestor_user})
             if res_ticket.get("status") == "success":
                 log_audit_action(username, role, "TDX_Ticket_Create", str(res_ticket.get("ticket_id")), "SUCCESS", f"Created ticket: {t_title}")
                 results.append(
