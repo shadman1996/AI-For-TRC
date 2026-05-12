@@ -69,27 +69,40 @@ def scrape_starid_admin(query: str, username: str, password: str):
                 name_text = raw_name.encode('ascii', 'ignore').decode('ascii').strip()
                 
             data = {
-                "Status": details.get("Activation Status", "Active").split(' ')[0],
-                "Name": name_text,
+                # 1. Primary Identity Info
                 "StarID": details.get("StarID", query).encode('ascii', 'ignore').decode('ascii'),
+                "Name": name_text,
                 "FirstName": details.get("First Name", "N/A"),
-                "InformalName": details.get("Informal Name", "N/A"),
-                "MiddleName": details.get("Middle Name", "N/A"),
                 "LastName": details.get("Last Name", "N/A"),
+                "MiddleName": details.get("Middle Name", "N/A"),
+                "InformalName": details.get("Informal Name", "N/A"),
+                
+                # 2. Account Placement & Security Status
+                "Status": details.get("Activation Status", "Active").split(' ')[0],
                 "ActivationStatus": details.get("Activation Status", "N/A"),
                 "LockStatus": details.get("Lock Status", "N/A"),
                 "Decommissioned": details.get("Decommissioned", "N/A"),
                 "PasswordExpires": details.get("Password Expires", "N/A"),
-                "NotificationEmail": details.get("Notification Email", "N/A"),
-                "EmailList": details.get("Email List", "N/A"),
+                
+                # 3. Administrative & Academic Identifiers
                 "TechID": details.get("TechID List", "N/A"),
                 "LibraryBarcode": details.get("Library Barcodes", "N/A"),
                 "StateEmployeeNumber": details.get("State Employee Number", "N/A"),
+                
+                # 4. Communications Routing
+                "NotificationEmail": details.get("Notification Email", "N/A"),
+                "EmailList": details.get("Email List", "N/A"),
+                
+                # 5. Role Placement
+                "Title": details.get("Title", "N/A"),
+                "Department": details.get("Department", "N/A"),
+                
+                # 6. Academic Affiliation Lists
                 "Affiliations": details.get("ISRS Affiliation List", "N/A"),
                 "ExtraAffiliationList": details.get("Extra Affiliation List", "N/A"),
                 "CohortList": details.get("Cohort List", "N/A"),
-                "Title": details.get("Title", "N/A"),
-                "Department": details.get("Department", "N/A"),
+                
+                # 7. System Tracking Audit Metadata
                 "Source": "StarID Admin Scraper"
             }
             
