@@ -1060,6 +1060,17 @@ def enrich_ai_prompt(prompt: str) -> str:
     if any(k in q_lower for k in ["sccm", "device", "mac address", "computer", "pc", "online", "ping"]):
         enrichments.append("FACT: The TRC AI Dashboard provides full integrations with SCCM and Juniper Mist WiFi. Users can type any PC Name, StarID, or MAC Address directly into the SCCM tab to query live SCCM records and active wireless telemetry. If a MAC address is not found in SCCM, the dashboard automatically fallback-scans Juniper Mist to locate the device on campus.")
 
+    # 5. Offline / Not in Network Troubleshooting
+    if any(k in q_lower for k in ["not in", "offline", "disconnect", "not found", "no device", "no pc", "cannot connect", "network"]):
+        enrichments.append(
+            "FACT: If a device is NOT found in SCCM or WiFi (offline/not on the network), the standard step-by-step troubleshooting protocol is:\n"
+            "1. Verify MAC Address: Typos in MAC strings are the #1 cause of lookups failing.\n"
+            "2. Physical Connection: Check that the Ethernet cable is securely connected to both the device NIC and the physical wall jack/drop.\n"
+            "3. Jack Patch/Activation: Check the wall drop label (e.g., 'BA221-D4'). If the jack is unpatched or inactive, a technician must submit a Network Port Activation request in TDX.\n"
+            "4. Device Power State: Hibernate, sleep, or powered-off computers will not register on network switches or show wireless telemetry.\n"
+            "5. Wi-Fi Connection: Verify the device is attempting to authenticate to the 'Eduroam' network using active, unlocked StarID credentials."
+        )
+
     if enrichments:
         enrichment_block = "\n".join(enrichments)
         return f"{prompt}\n\n[BACKGROUND REAL-TIME CONTEXT FROM CAMPUS SYSTEMS]\n{enrichment_block}"
