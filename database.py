@@ -30,10 +30,40 @@ def init_db():
         source TEXT DEFAULT 'Manual'
     )
     """)
+
+    # Scraped StarID Profiles Table (Cache)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS scraped_profiles (
+        starid TEXT PRIMARY KEY,
+        profile_data TEXT, -- JSON string
+        scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
     
     conn.commit()
     conn.close()
     print("SQLite Database initialized.")
+
+# Cache Portal Scraper Operations
+def get_cached_profile(starid):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM scraped_profiles WHERE starid = ?", (starid.lower(),)).fetchone()
+    conn.close()
+    if row:
+        data = json.loads(row["profile_data"])
+        data["Source"] = "StarID Admin (Cached)"
+        data["ScrapedAt"] = row["scraped_at"]
+        return data
+    return None
+
+def save_profile_cache(starid, profile_dict):
+    conn = get_db()
+    conn.execute("""
+        INSERT OR REPLACE INTO scraped_profiles (starid, profile_data, scraped_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+    """, (starid.lower(), json.dumps(profile_dict)))
+    conn.commit()
+    conn.close()
 
 def migrate_data():
     current_dir = os.path.dirname(os.path.abspath(__file__))

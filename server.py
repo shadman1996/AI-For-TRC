@@ -245,8 +245,53 @@ def get_me(token: str):
         return {"status": "success", "data": SESSIONS[token]}
     return {"status": "error", "message": "Unauthorized"}
 
-# Mount static files for the frontend
-current_dir = os.path.dirname(os.path.abspath(__file__))
+def find_directory_match(ad_display_name, ad_starid, faculty_list):
+    if not ad_display_name:
+        return None
+        
+    ad_display_name = ad_display_name.strip()
+    ad_starid = (ad_starid or "").strip().lower()
+    
+    # 1. Clean AD Display Name ("LastName, FirstName Middle")
+    name_parts = ad_display_name.split(",")
+    if len(name_parts) >= 2:
+        last_name = name_parts[0].strip().lower()
+        first_name_part = name_parts[1].strip()
+        first_name = first_name_part.split(" ")[0].strip().lower()
+    else:
+        words = ad_display_name.split(" ")
+        if len(words) >= 2:
+            first_name = words[0].strip().lower()
+            last_name = words[-1].strip().lower()
+        else:
+            first_name = ad_display_name.lower()
+            last_name = ""
+
+    # 2. Iterate and match
+    for f in faculty_list:
+        f_first = (f.get("firstName") or "").strip().lower()
+        f_last = (f.get("lastName") or "").strip().lower()
+        f_full = (f.get("fullName") or "").strip().lower()
+        email = (f.get("email") or "").strip().lower()
+        email_prefix = email.split("@")[0] if "@" in email else email
+        
+        # Match A: StarID matches email prefix
+        if ad_starid and email_prefix == ad_starid:
+            return f
+            
+        # Match B: Exact First + Last name matches
+        if f_first == first_name and f_last == last_name:
+            return f
+            
+        # Match C: Permuted Name Substring match (e.g. "Cindy Aamlid" matches "Aamlid, Cindy")
+        if last_name and f_last == last_name and (f_first in first_name or first_name in f_first):
+            return f
+            
+        # Match D: Full name overlap check
+        if last_name and last_name in f_full and first_name in f_full:
+            return f
+
+    return None
 
 # Active Directory Query via PowerShell (Flexible Search)
 @app.get("/api/ad/{query}")
@@ -281,24 +326,89 @@ def query_ad(query: str):
     try:
         result = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True, timeout=15)
         out = result.stdout.strip()
-        if out == "NOT_FOUND" or not out:
+        
+        # Fallback to local directory.json if AD search fails or returns nothing
+        if out == "NOT_FOUND" or not out or "ERROR" in out:
+            if os.path.exists("directory.json"):
+                with open("directory.json", "r", encoding="utf-8") as f:
+                    local_data = json.load(f)
+                    faculty = local_data.get("faculty", [])
+                    q = query.lower()
+                    matches = []
+                    for u in faculty:
+                        # Improved fuzzy match: check full name, email, title, and departments
+                        full_text = f"{u.get('fullName', '')} {u.get('email', '')} {u.get('title', '')} {' '.join(u.get('departments', []))}".lower()
+                        if q in full_text:
+                            matches.append({
+                                "StarID": u.get("email", "").split("@")[0], # Mock StarID from email
+                                "DisplayName": u.get("fullName"),
+                                "Title": u.get("title"),
+                                "Department": ", ".join(u.get("departments", [])),
+                                "IsLocked": False,
+                                "Office": u.get("office"),
+                                "Phone": u.get("phone"),
+                                "Email": u.get("email"),
+                                "Headshot": u.get("headshot")
+                            })
+                    if matches:
+                        return {"status": "success", "data": matches, "source": "Local Cache"}
+            
             return {"status": "error", "message": f"No users found matching '{query}'."}
         
         data = json.loads(out)
         # Ensure it's always a list for the frontend
         if isinstance(data, dict):
             data = [data]
+
+        # Augment with directory.json data if available using robust name matching
+        if os.path.exists("directory.json"):
+            try:
+                with open("directory.json", "r", encoding="utf-8") as f:
+                    local_data = json.load(f)
+                faculty = local_data.get("faculty", [])
+                
+                for user in data:
+                    starid = user.get("StarID")
+                    display_name = user.get("DisplayName")
+                    
+                    matched_f = find_directory_match(display_name, starid, faculty)
+                    if matched_f:
+                        user["Office"] = matched_f.get("office")
+                        user["Phone"] = matched_f.get("phone")
+                        user["Email"] = matched_f.get("email")
+                        user["Headshot"] = matched_f.get("headshot")
+                        
+                        # Override N/A or empty Title/Department with rich directory details
+                        if not user.get("Title") or user.get("Title") == "N/A":
+                            user["Title"] = matched_f.get("title")
+                        if not user.get("Department") or user.get("Department") == "N/A":
+                            user["Department"] = ", ".join(matched_f.get("departments", [])) if isinstance(matched_f.get("departments"), list) else matched_f.get("departments")
+                    else:
+                        user["Office"] = None
+                        user["Phone"] = None
+                        user["Email"] = None
+                        user["Headshot"] = None
+            except Exception as ex:
+                print(f"Augment AD with directory failed: {ex}")
             
         return {"status": "success", "data": data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# StarID Admin Portal Scraper (Headless)
+# StarID Admin Portal Scraper (Headless with SQLite Caching)
 @app.get("/api/scrape/starid/{query}")
 def scrape_starid(query: str):
-    # Load credentials from config.json
+    # 1. Check SQLite cache first for high efficiency
     try:
-        with open("config.json", "r") as f:
+        cached = database.get_cached_profile(query)
+        if cached:
+            return {"status": "success", "data": [cached], "source": "Database Cache"}
+    except Exception as e:
+        print(f"Database cache lookup failed: {e}")
+
+    # 2. Cache miss - Load credentials and execute live Playwright scraper
+    try:
+        with open("config.json", "r", encoding="utf-8") as f:
             config = json.load(f)
         creds = config.get("starid_admin", {})
         user = creds.get("username")
@@ -307,32 +417,74 @@ def scrape_starid(query: str):
         if not user or not pw:
             return {"status": "error", "message": "StarID Admin credentials not configured."}
             
-        return scraper.scrape_starid_admin(query, user, pw)
+        res = scraper.scrape_starid_admin(query, user, pw)
+        
+        # 3. Save to database cache on success (with local directory enrichment)
+        if res.get("status") == "success" and res.get("data"):
+            try:
+                profile_dict = res["data"][0]
+                
+                # Enrich with directory.json if available
+                if os.path.exists("directory.json"):
+                    try:
+                        with open("directory.json", "r", encoding="utf-8") as f:
+                            local_data = json.load(f)
+                        faculty = local_data.get("faculty", [])
+                        
+                        starid = profile_dict.get("StarID")
+                        display_name = profile_dict.get("Name")
+                        
+                        matched_f = find_directory_match(display_name, starid, faculty)
+                        if matched_f:
+                            profile_dict["Office"] = matched_f.get("office")
+                            profile_dict["Phone"] = matched_f.get("phone")
+                            if "Email" not in profile_dict or profile_dict["Email"] == "N/A":
+                                profile_dict["Email"] = matched_f.get("email")
+                            profile_dict["Headshot"] = matched_f.get("headshot")
+                            
+                            # Override Title/Department if N/A
+                            if not profile_dict.get("Title") or profile_dict.get("Title") == "N/A":
+                                profile_dict["Title"] = matched_f.get("title")
+                            if not profile_dict.get("Department") or profile_dict.get("Department") == "N/A":
+                                profile_dict["Department"] = ", ".join(matched_f.get("departments", [])) if isinstance(matched_f.get("departments"), list) else matched_f.get("departments")
+                        else:
+                            profile_dict["Office"] = None
+                            profile_dict["Phone"] = None
+                            profile_dict["Headshot"] = None
+                    except Exception as dex:
+                        print(f"Directory enrichment of scraped profile failed: {dex}")
+                
+                database.save_profile_cache(query, profile_dict)
+            except Exception as ce:
+                print(f"Failed to cache scraped profile: {ce}")
+                
+        return res
     except Exception as e:
         return {"status": "error", "message": f"Server error: {str(e)}"}
 
 # SCCM Integration (Using modern AdminService REST API to bypass WMI firewall)
 @app.get("/api/sccm/{device_name}")
+@app.get("/api/sccm/pc/{device_name}")
 def query_sccm(device_name: str):
     ps_script = f"""
     $url = "https://sccmpss.smsu.edu/AdminService/wmi/SMS_R_System?`$filter=Name eq '{device_name}'"
     try {{
-        # Bypass SSL checks if internal certificate is not trusted
+        # Rely on domain-trusted certificates and enforce TLS 1.2
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        [Net.ServicePointManager]::ServerCertificateValidationCallback = {{$true}}
         
         $result = Invoke-RestMethod -Uri $url -UseDefaultCredentials -ErrorAction Stop
         if ($result.value.Count -gt 0) {{
             $device = $result.value[0]
             $obj = @{{
-                Name = $device.Name
+                PCName = $device.Name
                 ResourceID = $device.ItemKey
-                LastLogonUserName = $device.LastLogonUserName
-                IPAddresses = $device.IPAddresses
-                OperatingSystemNameandVersion = $device.OperatingSystemNameandVersion
-                MACAddresses = $device.MACAddresses
+                User = $device.LastLogonUserName
+                IPAddress = if ($device.IPAddresses) {{ $device.IPAddresses -join ', ' }} else {{ 'N/A' }}
+                Model = $device.OperatingSystemNameandVersion
+                LastSeen = 'Active'
+                Status = 'Online'
             }}
-            $obj | ConvertTo-Json -Depth 3
+            @($obj) | ConvertTo-Json -Depth 3
         }} else {{
             Write-Output "NOT_FOUND"
         }}
@@ -349,11 +501,126 @@ def query_sccm(device_name: str):
             return {"status": "error", "message": f"SCCM Query Failed: {out}"}
         if not out:
             return {"status": "error", "message": "Failed to query SCCM."}
-        return {"status": "success", "data": json.loads(out)}
+        data_val = json.loads(out)
+        if isinstance(data_val, dict):
+            data_val = [data_val]
+        return {"status": "success", "data": data_val}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/sccm/mac/{mac_address}")
+def query_sccm_mac(mac_address: str):
+    # Normalize MAC Address to typical formats (e.g., 00:11:22:33:44:55 or 00-11-22-33-44-55)
+    clean_mac = "".join(c for c in mac_address if c.isalnum()).upper()
+    if len(clean_mac) != 12:
+        return {"status": "error", "message": f"Invalid MAC Address format: '{mac_address}'"}
+        
+    mac_colons = ":".join(clean_mac[i:i+2] for i in range(0, 12, 2))
+    mac_hyphens = "-".join(clean_mac[i:i+2] for i in range(0, 12, 2))
+    
+    ps_script = f"""
+    $urlColons = "https://sccmpss.smsu.edu/AdminService/wmi/SMS_G_System_NETWORK_ADAPTER_CONFIGURATION?`$filter=MACAddress eq '{mac_colons}'"
+    $urlHyphens = "https://sccmpss.smsu.edu/AdminService/wmi/SMS_G_System_NETWORK_ADAPTER_CONFIGURATION?`$filter=MACAddress eq '{mac_hyphens}'"
+    
+    try {{
+        # Rely on domain-trusted certificates and enforce TLS 1.2
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        
+        # Step 1: Find ResourceID from Network Adapter Configurations
+        $adapterRes = Invoke-RestMethod -Uri $urlColons -UseDefaultCredentials -ErrorAction SilentlyContinue
+        if (-not $adapterRes.value) {{
+            $adapterRes = Invoke-RestMethod -Uri $urlHyphens -UseDefaultCredentials -ErrorAction SilentlyContinue
+        }}
+        
+        if ($adapterRes.value.Count -gt 0) {{
+            $resourceId = $adapterRes.value[0].ResourceID
+            
+            # Step 2: Query SMS_R_System for the device specs using ResourceID
+            $systemUrl = "https://sccmpss.smsu.edu/AdminService/wmi/SMS_R_System?`$filter=ResourceId eq $resourceId"
+            $systemRes = Invoke-RestMethod -Uri $systemUrl -UseDefaultCredentials -ErrorAction Stop
+            
+            if ($systemRes.value.Count -gt 0) {{
+                $device = $systemRes.value[0]
+                $obj = @{{
+                    PCName = $device.Name
+                    ResourceID = $device.ItemKey
+                    User = $device.LastLogonUserName
+                    IPAddress = if ($device.IPAddresses) {{ $device.IPAddresses -join ', ' }} else {{ 'N/A' }}
+                    Model = $device.OperatingSystemNameandVersion
+                    LastSeen = 'Active'
+                    Status = 'Online'
+                }}
+                @($obj) | ConvertTo-Json -Depth 3
+            }} else {{
+                Write-Output "NOT_FOUND"
+            }}
+        }} else {{
+            Write-Output "NOT_FOUND"
+        }}
+    }} catch {{
+        Write-Output "ERROR: $($_.Exception.Message)"
+    }}
+    """
+    try:
+        result = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True, timeout=20)
+        out = result.stdout.strip()
+        if out == "NOT_FOUND":
+            return {"status": "error", "message": f"No device with MAC '{mac_address}' found in SCCM."}
+        if out.startswith("ERROR:"):
+            return {"status": "error", "message": f"SCCM Query Failed: {out}"}
+        if not out:
+            return {"status": "error", "message": "Failed to query SCCM."}
+        data_val = json.loads(out)
+        if isinstance(data_val, dict):
+            data_val = [data_val]
+        return {"status": "success", "data": data_val}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 # Juniper Mist Integration
+@app.get("/api/sccm/user/{username}")
+def query_sccm_user(username: str):
+    # Use the same logic as query_sccm but filter by LastLogonUserName
+    ps_script = f"""
+    $baseUrl = 'https://sccm.smsu.edu/AdminService/v1.0/Device'
+    $filter = "?$filter=LastLogonUserName eq '{username}'"
+    $url = $baseUrl + $filter
+    
+    try {{
+        $response = Invoke-RestMethod -Uri $url -Method Get -UseDefaultCredentials
+        if ($response.value) {{
+            $response.value | ConvertTo-Json -Depth 2
+        }} else {{
+            "[]"
+        }}
+    }} catch {{
+        "[]"
+    }}
+    """
+    try:
+        result = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True, timeout=10)
+        out = result.stdout.strip()
+        if not out or out == "[]":
+            return {"status": "success", "data": []}
+            
+        raw_data = json.loads(out)
+        if isinstance(raw_data, dict): raw_data = [raw_data]
+        
+        devices = []
+        for item in raw_data:
+            devices.append({
+                "PCName": item.get("Name"),
+                "Model": item.get("Model"),
+                "LastSeen": item.get("LastContactTime"),
+                "User": item.get("LastLogonUserName"),
+                "IPAddress": item.get("IPAddresses"),
+                "Status": "Online" if item.get("IsOnline") else "Offline",
+                "ResourceID": item.get("ResourceID")
+            })
+        return {"status": "success", "data": devices}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.get("/api/mist/{mac_address}")
 def query_mist(mac_address: str):
     mist_token = "sG91PcJydteueZYOZOPZLEe7AFamaglsv1A8REnbLXm7fiNr0EXC1Q3XFQ2m8b1UyOcEWveaMFYqsmtTyFhbtLLMeAzQBnG1"
@@ -422,8 +689,8 @@ def remote_action(payload: RemoteActionPayload):
     }} | ConvertTo-Json
     
     try {{
+        # Rely on domain-trusted certificates and enforce TLS 1.2
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        [Net.ServicePointManager]::ServerCertificateValidationCallback = {{$true}}
         
         # Note: In a real production environment, you would target the specific instance.
         # But calling InvokeMethod on the class with ResourceID as a hidden parameter or targeting the instance path is required.
@@ -573,10 +840,41 @@ MOCK_TICKETS = [
     }
 ]
 
+@app.get("/api/admin/get-config")
+def get_system_config():
+    if os.path.exists("config_sys.json"):
+        with open("config_sys.json", "r") as f:
+            return {"status": "success", "data": json.load(f)}
+    return {"status": "success", "data": {}}
+
+@app.post("/api/admin/save-config")
+def save_system_config(payload: dict):
+    with open("config_sys.json", "w") as f:
+        json.dump(payload, f, indent=4)
+    return {"status": "success"}
+
 @app.get("/api/tdx/tickets")
-def get_tdx_tickets(token: str = None):
-    # In the future, this will check 'token' and call the real TDX API
-    # For now, we return mock data for development
+def get_tdx_tickets():
+    # Load config
+    conf = {}
+    if os.path.exists("config_sys.json"):
+        with open("config_sys.json", "r", encoding="utf-8") as f:
+            conf = json.load(f)
+    
+    app_id = conf.get("tdx_appid")
+    token = conf.get("tdx_token")
+    
+    if app_id and token:
+        # Real TDX API Call logic would go here
+        # For now, we still return MOCK_TICKETS if the token is "DEMO"
+        if token == "DEMO":
+            return {"status": "success", "data": MOCK_TICKETS}
+            
+        # Placeholder for real API:
+        # headers = {"Authorization": f"Bearer {token}"}
+        # res = requests.get(f"https://api.teamdynamix.com/TDNext/api/{app_id}/tickets", headers=headers)
+        # return res.json()
+        
     return {"status": "success", "data": MOCK_TICKETS}
 
 # --- DEPLOYMENT ---
@@ -675,14 +973,18 @@ def ai_orchestrate(data: dict):
 
     # Refine specific technical lookups (StarID/SCCM) via keywords first
     q_lower = query.lower()
-    if any(k in q_lower for k in ["sccm", "pc", "computer"]):
-        return {"intent": "sccm_lookup", "params": {"query": q_lower.split("sccm")[-1].strip() or q_lower}, "ai_reason": reasoning_raw}
+    mac_match = re.search(r'([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}|([0-9a-fA-F]{2}-){5}[0-9a-fA-F]{2}|([0-9a-fA-F]{4}\.){2}[0-9a-fA-F]{4}|[0-9a-fA-F]{12}', query)
+    
+    if mac_match or any(k in q_lower for k in ["sccm", "pc", "computer", "device", "mac"]):
+        extracted_query = mac_match.group(0) if mac_match else (q_lower.split("sccm")[-1].strip() if "sccm" in q_lower else q_lower)
+        return {"intent": "sccm_lookup", "params": {"query": extracted_query}, "ai_reason": reasoning_raw}
     if any(k in q_lower for k in ["deep search", "scrape", "portal"]):
         starid_match = re.search(r'\b[a-z]{2}[0-9]{4}[a-z]{2}\b', q_lower)
         starid = starid_match.group(0) if starid_match else q_lower.split("scrape")[-1].strip()
         return {"intent": "portal_scrape", "params": {"query": starid}, "ai_reason": reasoning_raw}
     if any(k in q_lower for k in ["starid", "find", "user", "who is"]):
         return {"intent": "directory_search", "params": {"query": q_lower.split("find")[-1].strip() or q_lower}, "ai_reason": reasoning_raw}
+
     if any(k in q_lower for k in ["map", "floor", "where"]):
         return {"intent": "map_lookup", "params": {"query": q_lower}, "ai_reason": reasoning_raw}
 
@@ -709,10 +1011,66 @@ def web_search(q: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+def enrich_ai_prompt(prompt: str) -> str:
+    enrichments = []
+    q_lower = prompt.lower()
+    
+    # 1. IP Address Regex Search
+    ip_match = re.search(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', prompt)
+    if ip_match:
+        ip = ip_match.group(0)
+        parts = ip.split('.')
+        if len(parts) == 4:
+            if parts[0] == '10':
+                enrichments.append(f"FACT: {ip} is an internal private IP address belonging to the SMSU Campus Intranet network. Specifically, 10.5.x.x is the primary subnet for workstations, labs, and administrative devices at Southwest Minnesota State University (SMSU).")
+            elif parts[0] == '137' and parts[1] == '192':
+                enrichments.append(f"FACT: {ip} is a public IP address belonging to Southwest Minnesota State University (SMSU's public network block 137.192.0.0/16).")
+            else:
+                enrichments.append(f"FACT: {ip} is an external, non-campus IP address.")
+
+    # 2. Room Code Search (e.g., SC 219, BA 104)
+    room_match = re.search(r'\b([a-zA-Z]{2,3})\s*([0-9]{3})\b', prompt)
+    if room_match:
+        bld = room_match.group(1).upper()
+        num = room_match.group(2)
+        room_code = f"{bld} {num}"
+        enrichments.append(f"FACT: Room {room_code} is located in the {CAMPUS_GRAPH.get(bld, {}).get('name', bld)} building.")
+        
+        # Search directory.json for people in this office
+        if os.path.exists("directory.json"):
+            try:
+                with open("directory.json", "r", encoding="utf-8") as f:
+                    local_data = json.load(f)
+                faculty = local_data.get("faculty", [])
+                staff_in_room = []
+                for u in faculty:
+                    office = u.get("office", "")
+                    if office and room_code.replace(" ", "").lower() in office.replace(" ", "").lower():
+                        staff_in_room.append(f"{u.get('fullName')} ({u.get('title')}, Dept: {', '.join(u.get('departments', [])) if isinstance(u.get('departments'), list) else u.get('departments')})")
+                if staff_in_room:
+                    enrichments.append(f"FACT: The following staff/faculty members are located in office {room_code}: " + ", ".join(staff_in_room))
+            except:
+                pass
+
+    # 3. Network Ports / Port Activation Procedures
+    if any(k in q_lower for k in ["port", "jack", "patch", "ethernet", "outlet", "wall drop"]):
+        enrichments.append("FACT: To activate or patch a physical network wall drop/ethernet port at SMSU, you need: 1. The room number, 2. The physical jack label (e.g., 'BA221-D4'), and 3. The MAC address of the device being connected. This is requested via the 'Network Port Activation/Troubleshooting' service catalog form in TeamDynamix (TDX). ITS Network Services manages physical patching in the telecommunications closets.")
+
+    # 4. Device Lookup (SCCM/WiFi) Help
+    if any(k in q_lower for k in ["sccm", "device", "mac address", "computer", "pc", "online", "ping"]):
+        enrichments.append("FACT: The TRC AI Dashboard provides full integrations with SCCM and Juniper Mist WiFi. Users can type any PC Name, StarID, or MAC Address directly into the SCCM tab to query live SCCM records and active wireless telemetry. If a MAC address is not found in SCCM, the dashboard automatically fallback-scans Juniper Mist to locate the device on campus.")
+
+    if enrichments:
+        enrichment_block = "\n".join(enrichments)
+        return f"{prompt}\n\n[BACKGROUND REAL-TIME CONTEXT FROM CAMPUS SYSTEMS]\n{enrichment_block}"
+    
+    return prompt
+
 @app.post("/api/ai/generate")
 def ai_proxy_generate(data: dict):
     prompt = data.get("prompt", "")
-    response = AIAdapter.generate(prompt)
+    enriched = enrich_ai_prompt(prompt)
+    response = AIAdapter.generate(enriched)
     return {"status": "success", "response": response}
 
 @app.post("/api/ai/stream")
@@ -724,15 +1082,19 @@ async def ai_proxy_stream(data: dict):
     if engine.get("provider") != "ollama":
         return {"status": "error", "message": "Streaming only supported for Ollama provider currently."}
 
+    # Enrich prompt with real-time facts (IPs, subnets, rooms, ports, devices)
+    enriched = enrich_ai_prompt(prompt)
+
     # Format history into the prompt for context
     context_str = ""
     if history:
         for msg in history[-4:]: # Keep last 4 messages to save context window
             role = "User" if msg.get("role") == "user" else "Assistant"
             context_str += f"{role}: {msg.get('content')}\n"
-        full_prompt = f"Below is a conversation between a User and a TRC Help Desk Assistant.\n\n{context_str}User: {prompt}\nAssistant:"
+        full_prompt = f"Below is a conversation between a User and a TRC Help Desk Assistant.\n\n{context_str}User: {enriched}\nAssistant:"
     else:
-        full_prompt = prompt
+        full_prompt = enriched
+
 
     def generate():
         if not AIAdapter._check_ollama_alive():

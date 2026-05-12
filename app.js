@@ -3,6 +3,55 @@ let USER_MODULES = JSON.parse(localStorage.getItem('trc_modules')) || [];
 let currentView = 'chat';
 let userCurrentLocation = "the Technology Resource Center (TRC) in Bellows Academic (BA)";
 
+// ----- THEME & AVATAR MANAGEMENT -----
+function setTheme(theme) {
+  document.body.className = `theme-${theme}`;
+  localStorage.setItem('trc_theme', theme);
+  
+  // Update UI state in settings view (filtering out avatar options)
+  document.querySelectorAll('.theme-option:not(.avatar-option)').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${theme}'`)) {
+      opt.classList.add('active');
+    }
+  });
+  
+  showToast(`Theme updated to ${theme}`, 'success');
+}
+
+function setAvatar(avatarStr) {
+  localStorage.setItem('trc_avatar', avatarStr);
+  const headerAvatar = document.getElementById('headerUserAvatar');
+  if (headerAvatar) headerAvatar.innerText = avatarStr;
+  
+  // Update active state in selector
+  document.querySelectorAll('.avatar-option').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${avatarStr}'`)) {
+      opt.classList.add('active');
+    }
+  });
+  
+  showToast("Profile Avatar updated!", "success");
+}
+
+// Initialize theme and avatar
+const savedTheme = localStorage.getItem('trc_theme') || 'default';
+document.body.className = `theme-${savedTheme}`;
+
+const savedAvatar = localStorage.getItem('trc_avatar') || '🤠';
+document.addEventListener('DOMContentLoaded', () => {
+  const headerAvatar = document.getElementById('headerUserAvatar');
+  if (headerAvatar) headerAvatar.innerText = savedAvatar;
+  
+  // Select active avatar in selector
+  document.querySelectorAll('.avatar-option').forEach(opt => {
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${savedAvatar}'`)) {
+      opt.classList.add('active');
+    }
+  });
+});
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
   await fetchConfig();
@@ -11,6 +60,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderFormGuide();
   renderLinks();
   await loadDirectoryData();
+  await loadTickets(); 
+  await loadSystemConfig(); // Load integration settings
+  renderMaps();
   checkOllamaStatus();
   initNotifications();
   if (USER_MODULES.length > 0) renderSidebar();
@@ -457,16 +509,19 @@ async function checkEnterpriseTools(text) {
         let html = `**Found ${data.data.length} match(es):**<br><br>`;
         
         data.data.forEach((user, idx) => {
-          html += `<div style="border-left: 3px solid var(--primary); padding-left: 10px; margin-bottom: 15px;">`;
-          html += `• **StarID:** <span style="color:var(--primary); font-weight:bold;">${user.StarID || 'N/A'}</span><br>`;
-          html += `• **Name:** ${user.DisplayName || 'N/A'}<br>`;
-          html += `• **Title:** ${user.Title || 'N/A'}<br>`;
-          html += `• **Dept:** ${user.Department || 'N/A'}<br>`;
-          html += `• **Locked:** ${user.IsLocked ? '<span style="color:#ef4444;font-weight:bold;">⚠️ YES</span>' : '<span style="color:#22c55e;font-weight:bold;">✅ NO</span>'}<br>`;
-          if ((!user.Title || user.Title === 'N/A') && user.StarID) {
-            html += `<button class="btn-small" onclick="scrapePortal('${user.StarID}')" style="margin-top:8px; font-size:10px; padding: 4px 8px; background:var(--primary); color:white; border:none; border-radius:4px; cursor:pointer;">🔍 Deep Search Portal (Full Details)</button><br>`;
-          }
-          html += `</div>`;
+          html += `
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06); padding: 8px 0; gap: 15px;">
+              <div>
+                👤 <strong style="color:var(--text);">${user.DisplayName || 'Unknown'}</strong> 
+                <span style="opacity:0.6; font-size:11px; margin-left:5px;">(${user.StarID || 'N/A'})</span>
+              </div>
+              ${user.StarID ? `
+                <button class="btn-small" onclick="event.stopPropagation(); showUnifiedProfile('${user.StarID}', '${user.DisplayName ? user.DisplayName.replace(/'/g, "\\'") : 'User'}')" style="font-size:10.5px; padding: 4px 10px; background:var(--accent); border-radius:4px; font-weight:600; border:none; color:white; cursor:pointer; display:flex; align-items:center; gap:4px;">
+                  🔍 Profile
+                </button>
+              ` : ''}
+            </div>
+          `;
         });
         
         appendMessage(html, 'ai');
@@ -628,6 +683,246 @@ async function scrapePortal(starid) {
   }
 }
 
+// ----- DIRECTORY TAB LOGIC -----
+async function searchDirectoryTab() {
+  const input = document.getElementById('dirSearchInput');
+  const query = input.value.trim();
+  if (!query) return;
+
+  const resultsEl = document.getElementById('directoryResults');
+  resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Searching Campus Directory...</h3></div>';
+
+  try {
+    const res = await fetch(`/api/ad/${query}`);
+    const data = await res.json();
+    if (data.status === 'success') {
+      renderDirectoryResults(data.data, data.source);
+    } else {
+      resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ ${data.message}</h3></div>`;
+    }
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="ticket-placeholder"><h3>❌ Error connecting to server</h3></div>';
+  }
+}
+
+function renderDirectoryResults(users, source = 'Active Directory') {
+  const container = document.getElementById('directoryResults');
+  let html = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+      <span style="font-size:12px; color:var(--text2); opacity:0.7;">Source: ${source}</span>
+      <span class="badge" style="background:rgba(99,102,241,0.15); color:var(--accent); font-size:10px; padding:4px 8px; border-radius:12px;">Found ${users.length} Account(s)</span>
+    </div>
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 12px; color: var(--text2); display: flex; align-items: center; gap: 8px;">
+      <span>💡</span>
+      <span><strong>Directory Auditing Tip:</strong> If an account shows unassigned details, click <strong>Unified Profile</strong> to run a live MinnState StarID Admin check & retrieve real-time registration, activation status, library barcodes, and live IT telemetry.</span>
+    </div>
+  `;
+  html += `<div class="directory-grid">`;
+  
+  users.forEach(user => {
+    const lockedClass = user.IsLocked ? 'locked' : 'unlocked';
+    const displayTitle = (user.Title && user.Title !== 'N/A') ? user.Title : `<span style="opacity:0.5; font-style:italic; font-size:11px;">Standard AD Account</span>`;
+    const displayDept = (user.Department && user.Department !== 'N/A') ? user.Department : `<span style="opacity:0.5; font-style:italic; font-size:11px;">General User</span>`;
+    
+    // Setup headshot picture with fallback
+    let avatarHtml = `<div class="dir-avatar">${user.DisplayName ? user.DisplayName[0] : '👤'}</div>`;
+    if (user.Headshot) {
+      avatarHtml = `
+        <div class="dir-avatar" style="background: url('https://www.smsu.edu/directory/${user.Headshot}') center/cover no-repeat; border-radius: 50%;"></div>
+      `;
+    }
+
+    html += `
+      <div class="directory-card ${user.IsLocked ? 'card-locked' : ''}">
+        <div class="dir-card-header">
+          ${avatarHtml}
+          <div class="dir-main-info">
+            <div class="dir-name">${user.DisplayName}</div>
+            <div class="dir-starid">${user.StarID}</div>
+          </div>
+          <div class="dir-status ${lockedClass}">${user.IsLocked ? 'Locked' : 'Active'}</div>
+        </div>
+        <div class="dir-body">
+          <div class="dir-item"><strong>Title:</strong> ${displayTitle}</div>
+          <div class="dir-item"><strong>Department:</strong> ${displayDept}</div>
+          ${user.Office ? `<div class="dir-item"><strong>Room Number:</strong> 🚪 ${user.Office}</div>` : ''}
+          ${user.Email ? `<div class="dir-item"><strong>Email:</strong> 📧 ${user.Email}</div>` : ''}
+          ${user.Phone ? `<div class="dir-item"><strong>Phone:</strong> 📞 ${user.Phone}</div>` : ''}
+        </div>
+        <div class="dir-actions">
+           <button class="btn-small" onclick="event.stopPropagation(); copyToClipboard('${user.StarID}', this)">📋 Copy StarID</button>
+           <button class="btn-small" onclick="event.stopPropagation(); showUnifiedProfile('${user.StarID}', '${user.DisplayName ? user.DisplayName.replace(/'/g, "\\'") : 'User'}')">🔍 Unified Profile</button>
+        </div>
+      </div>
+    `;
+  });
+  
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+// ----- SCCM TAB LOGIC -----
+async function searchSCCMTab() {
+  const input = document.getElementById('sccmSearchInput');
+  const query = input.value.trim();
+  if (!query) return;
+
+  const resultsEl = document.getElementById('sccmResults');
+  resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Scanning SCCM DB...</h3></div>';
+
+  // Smart MAC address pattern recognition (colons, hyphens, periods, or plain hex)
+  const isMac = /^([0-9A-Fa-f]{2}[:-]?){5}([0-9A-Fa-f]{2})$/.test(query) || 
+                /^([0-9A-Fa-f]{4}[.]){2}([0-9A-Fa-f]{4})$/.test(query) || 
+                /^[0-9A-Fa-f]{12}$/.test(query);
+
+  const endpoint = isMac ? `/api/sccm/mac/${encodeURIComponent(query)}` : `/api/sccm/pc/${encodeURIComponent(query)}`;
+
+  try {
+    const res = await fetch(endpoint);
+    const data = await res.json();
+    if (data.status === 'success') {
+      renderSCCMResults(data.data);
+    } else {
+      if (isMac) {
+        // Fallback to query Mist WiFi
+        resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>🔍 MAC not in SCCM. Scanning Juniper Mist WiFi...</h3></div>';
+        try {
+          const mistRes = await fetch(`/api/mist/${encodeURIComponent(query)}`);
+          const mistData = await mistRes.json();
+          if (mistData.status === 'success') {
+            const client = mistData.data;
+            resultsEl.innerHTML = `
+              <div style="background: rgba(79, 70, 229, 0.1); border: 1px solid #4f46e5; padding: 12px 16px; border-radius: 8px; margin-bottom: 15px; font-size: 13.5px; line-height: 1.45; animation: slideIn 0.3s ease-out;">
+                ℹ️ <strong>Device unmanaged by SCCM:</strong> The MAC address <code>${query}</code> is not registered as an SCCM managed workstation. However, we found an active WiFi session on <strong>Juniper Mist</strong>:
+              </div>
+              <div class="directory-grid">
+                <div class="directory-card" style="border-color: #4f46e5; background: rgba(79, 70, 229, 0.02);">
+                  <div class="dir-card-header" style="border-bottom: 1px solid rgba(79, 70, 229, 0.15);">
+                    <div class="dir-avatar" style="background:#4f46e5; color:#fff;">📶</div>
+                    <div class="dir-main-info">
+                      <div class="dir-name" style="color:#fff;">${client.Hostname || 'Wireless Client'}</div>
+                      <div class="dir-starid">${client.MAC || query}</div>
+                    </div>
+                    <div class="dir-status unlocked" style="background: rgba(34, 197, 94, 0.15); color: #22c55e;">Connected</div>
+                  </div>
+                  <div class="dir-body" style="padding-top:12px;">
+                    <div class="dir-item"><strong>Access Point (AP):</strong> ${client.Device || 'N/A'}</div>
+                    <div class="dir-item"><strong>SSID:</strong> ${client.SSID || 'N/A'}</div>
+                    <div class="dir-item"><strong>IP Address:</strong> ${client.IP || 'N/A'}</div>
+                    <div class="dir-item"><strong>Device OS:</strong> ${client.OS || 'N/A'}</div>
+                    <div class="dir-item"><strong>Network Band:</strong> ${client.Band || 'N/A'} (${client.Protocol || 'N/A'})</div>
+                  </div>
+                </div>
+              </div>
+            `;
+          } else {
+            resultsEl.innerHTML = `
+              <div class="ticket-placeholder">
+                <h3>❌ Device not found in SCCM or WiFi</h3>
+                <p style="margin-top:6px; font-size:12.5px; opacity:0.75;">The MAC <strong>${query}</strong> is not in SCCM or active on the wireless network.</p>
+              </div>
+            `;
+          }
+        } catch (mistErr) {
+          resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ Device not found in SCCM</h3></div>`;
+        }
+      } else {
+        resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ ${data.message}</h3></div>`;
+      }
+    }
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="ticket-placeholder"><h3>❌ Error connecting to server</h3></div>';
+  }
+}
+
+function renderSCCMResults(devices) {
+  const container = document.getElementById('sccmResults');
+  let html = `<div class="directory-grid">`;
+  
+  devices.forEach(pc => {
+    const onlineStatus = pc.Status === 'Online' ? 'unlocked' : 'locked';
+    html += `
+      <div class="sccm-card">
+        <div class="dir-card-header">
+          <div class="dir-avatar" style="background:var(--accent2);">💻</div>
+          <div class="dir-main-info">
+            <div class="dir-name">${pc.PCName}</div>
+            <div class="dir-starid">${pc.User || 'No User'}</div>
+          </div>
+          <div class="dir-status ${onlineStatus}">${pc.Status}</div>
+        </div>
+        <div class="dir-body">
+          <div class="dir-item"><strong>Model:</strong> ${pc.Model}</div>
+          <div class="dir-item"><strong>Last Seen:</strong> ${pc.LastSeen}</div>
+          <div class="dir-item"><strong>IP:</strong> ${pc.IPAddress}</div>
+        </div>
+        <div class="remote-actions-bar" style="margin-top:10px;">
+           <button class="remote-btn" onclick="triggerRemoteAction('${pc.PCName}', 'Sync Policy', this, '${pc.ResourceID}')">🔄 Sync</button>
+           <button class="remote-btn" onclick="triggerRemoteAction('${pc.PCName}', 'Scan Updates', this, '${pc.ResourceID}')">🔍 Scan</button>
+           <button class="remote-btn" onclick="triggerRemoteAction('${pc.PCName}', 'Evaluate Updates', this, '${pc.ResourceID}')">🚀 Eval</button>
+        </div>
+      </div>
+    `;
+  });
+  
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+// ----- MIST TAB LOGIC -----
+async function searchMistTab() {
+  const input = document.getElementById('mistSearchInput');
+  const query = input.value.trim();
+  if (!query) return;
+
+  const resultsEl = document.getElementById('mistResults');
+  resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Querying Mist Cloud API...</h3></div>';
+
+  try {
+    const res = await fetch(`/api/mist/${query}`);
+    const data = await res.json();
+    if (data.status === 'success') {
+      renderMistResults(data.data);
+    } else {
+      resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ ${data.message}</h3></div>`;
+    }
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="ticket-placeholder"><h3>❌ Error connecting to server</h3></div>';
+  }
+}
+
+function renderMistResults(clients) {
+  const container = document.getElementById('mistResults');
+  if (!clients || clients.length === 0) {
+    container.innerHTML = '<div class="ticket-placeholder"><h3>No clients found for this MAC</h3></div>';
+    return;
+  }
+  
+  let html = `<div class="directory-grid">`;
+  clients.forEach(client => {
+    html += `
+      <div class="directory-card">
+        <div class="dir-card-header">
+          <div class="dir-avatar" style="background:#4f46e5;">📶</div>
+          <div class="dir-main-info">
+            <div class="dir-name">${client.hostname || 'Unknown Device'}</div>
+            <div class="dir-starid">${client.mac}</div>
+          </div>
+          <div class="dir-status unlocked">Connected</div>
+        </div>
+        <div class="dir-body">
+          <div class="dir-item"><strong>AP Name:</strong> ${client.ap_name || 'N/A'}</div>
+          <div class="dir-item"><strong>SSID:</strong> ${client.ssid || 'N/A'}</div>
+          <div class="dir-item"><strong>Signal (RSSI):</strong> ${client.rssi} dBm</div>
+          <div class="dir-item"><strong>IP Address:</strong> ${client.ip || 'N/A'}</div>
+        </div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
 function getKeywordPrediction(text) {
   const lowerText = text.toLowerCase();
   
@@ -640,6 +935,7 @@ function getKeywordPrediction(text) {
     let matchedPerson = null;
     let isRoomQuery = false;
     
+// Global variable for directory data (used in chat intent detection)
     // Look for room match
     for (const person of directoryData) {
       if (person.office) {
@@ -831,7 +1127,7 @@ function appendMessage(text, sender) {
   
   const avatar = document.createElement('div');
   avatar.className = 'msg-avatar';
-  avatar.innerText = sender === 'user' ? '🤠' : '🐴';
+  avatar.innerText = sender === 'user' ? (localStorage.getItem('trc_avatar') || '🤠') : '🐴';
   
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble';
@@ -1136,7 +1432,7 @@ async function matchKnowledgeBase(ticket) {
       const list = document.getElementById('kbSuggestionList');
       container.classList.remove('hidden');
       list.innerHTML = data.results.slice(0, 3).map(res => `
-        <div class="kb-chip" onclick="switchView('faq'); document.getElementById('faqSearchInput').value='${res.item.q}'; searchFAQ();">
+        <div class="kb-chip" onclick="switchView('faq'); document.getElementById('faqSearchInput').value='${res.item.q}'; filterFAQ();">
           📖 ${res.item.q}
         </div>
       `).join('');
@@ -1444,17 +1740,14 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
-function addNotification(title, message, level = 'info') {
-  const notif = {
-    id: Date.now(),
-    title,
-    message,
-    level,
+function addNotification(title, message, level = 'info', action = null) {
+  const id = Date.now();
+  notifications.unshift({
+    id, title, message, level, action,
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     read: false
-  };
+  });
   
-  notifications.unshift(notif);
   if (notifications.length > 20) notifications.pop(); // Keep last 20
   
   saveNotifications();
@@ -1483,12 +1776,37 @@ function renderNotifications() {
   }
   
   listEl.innerHTML = notifications.map(n => `
-    <div class="notif-item ${n.level} ${n.read ? 'read' : 'unread'}" onclick="markAsRead(${n.id})">
+    <div class="notif-item ${n.level} ${n.read ? 'read' : 'unread'}" onclick="handleNotifClick(${n.id})">
       <h4>${n.title}</h4>
       <p>${n.message}</p>
       <div style="font-size: 10px; color: var(--text2); margin-top: 4px;">${n.time}</div>
     </div>
   `).join('');
+}
+
+function handleNotifClick(id) {
+  const notif = notifications.find(n => n.id === id);
+  if (notif) {
+    notif.read = true;
+    
+    // Close the menu
+    document.getElementById('notifMenu').classList.add('hidden');
+
+    if (notif.action) {
+      switchView(notif.action);
+    } else if (notif.title.includes('#')) {
+        // Auto-detect ticket notification and switch to tickets view
+        const match = notif.title.match(/#(\d+)/) || notif.message.match(/#(\d+)/);
+        if (match) {
+            const ticketId = parseInt(match[1]);
+            switchView('tickets');
+            setTimeout(() => showTicketDetail(ticketId), 100);
+        }
+    }
+    
+    saveNotifications();
+    renderNotifications();
+  }
 }
 
 function markAsRead(id) {
@@ -1574,15 +1892,15 @@ async function executeAICommand() {
     if (data.intent === 'sccm_lookup') {
       switchView('sccm');
       document.getElementById('sccmSearchInput').value = data.params.query;
-      searchSCCM();
+      searchSCCMTab();
     } else if (data.intent === 'directory_search') {
       switchView('directory');
       document.getElementById('dirSearchInput').value = data.params.query;
-      searchDirectory();
+      searchDirectoryTab();
     } else if (data.intent === 'kb_search') {
       switchView('faq');
       document.getElementById('faqSearchInput').value = data.params.query;
-      searchFAQ();
+      filterFAQ();
     } else if (data.intent === 'portal_scrape') {
       switchView('chat');
       scrapePortal(data.params.query);
@@ -1621,6 +1939,61 @@ function handleCommandKey(e) {
 
 // ----- AUTHENTICATION LOGIC -----
 let currentUser = null;
+
+function togglePasswordVisibility() {
+  const passInput = document.getElementById('loginPass');
+  const toggleBtn = document.getElementById('togglePass');
+  if (passInput.type === 'password') {
+    passInput.type = 'text';
+    toggleBtn.innerText = '🔒';
+  } else {
+    passInput.type = 'password';
+    toggleBtn.innerText = '👁️';
+  }
+}
+
+async function loadSystemConfig() {
+  try {
+    const res = await fetch('/api/admin/get-config');
+    const data = await res.json();
+    if (data.status === 'success') {
+      const conf = data.data;
+      if (conf.tdx_appid) document.getElementById('conf_tdx_appid').value = conf.tdx_appid;
+      if (conf.tdx_token) document.getElementById('conf_tdx_token').value = conf.tdx_token;
+      if (conf.sccm_url) document.getElementById('conf_sccm_url').value = conf.sccm_url;
+      if (conf.mist_org) document.getElementById('conf_mist_org').value = conf.mist_org;
+      if (conf.mist_token) document.getElementById('conf_mist_token').value = conf.mist_token;
+      if (conf.ai_url) document.getElementById('conf_ai_url').value = conf.ai_url;
+    }
+  } catch (e) {}
+}
+
+async function saveSystemConfig() {
+  const payload = {
+    tdx_appid: document.getElementById('conf_tdx_appid').value,
+    tdx_token: document.getElementById('conf_tdx_token').value,
+    sccm_url: document.getElementById('conf_sccm_url').value,
+    mist_org: document.getElementById('conf_mist_org').value,
+    mist_token: document.getElementById('conf_mist_token').value,
+    ai_url: document.getElementById('conf_ai_url').value
+  };
+
+  try {
+    const res = await fetch('/api/admin/save-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast("System Integrations Saved!", "success");
+      // Reload tickets to see if new config works
+      loadTickets();
+    }
+  } catch (e) {
+    showToast("Failed to save config", "error");
+  }
+}
 
 async function performLogin() {
   const user = document.getElementById('loginUser').value.trim();
@@ -1859,3 +2232,225 @@ document.addEventListener('click', (e) => {
     document.getElementById('notifMenu').classList.add('hidden');
   }
 });
+
+// --- UNIFIED PROFILE LOGIC ---
+async function showUnifiedProfile(starId, name) {
+  let modal = document.getElementById('unifiedProfileModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'unifiedProfileModal';
+    modal.className = 'unified-profile-modal';
+    document.body.appendChild(modal);
+  }
+
+  modal.innerHTML = `
+    <div class="modal-content" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; background: var(--bg2); border: 1.5px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; padding: 20px; box-shadow: var(--shadow);">
+      <div class="unified-header" style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom:12px; margin-bottom:15px;">
+        <h2 style="margin:0; font-size:22px; font-weight:700; color:#fff; display:flex; align-items:center; gap:8px;">👤 Unified Profile <span style="opacity:0.5; font-weight:400; font-size:16px;">(${starId})</span></h2>
+        <button class="close-btn" onclick="closeUnifiedProfile()" style="background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer; transition:color 0.2s;">✕</button>
+      </div>
+      <div style="flex:1; overflow-y:auto; padding-right:5px; display:flex; flex-direction:column; gap:15px;">
+        <div id="prof-identity">
+          <div class="prof-loading">Loading general directory details...</div>
+        </div>
+        <div class="profile-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 15px;">
+          <div class="profile-section" id="prof-portal" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto;">
+            <h3>🔍 StarID Portal Details</h3>
+            <div class="prof-loading">Fetching full details from MinnState...</div>
+          </div>
+          <div class="profile-section" id="prof-sccm" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto;">
+            <h3>💻 SCCM Assets & Usage</h3>
+            <div class="prof-loading">Scanning SCCM database...</div>
+          </div>
+          <div class="profile-section" id="prof-tdx" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto;">
+            <h3>🎫 Support History (TDX)</h3>
+            <div class="prof-loading">Querying ticket system...</div>
+          </div>
+          <div class="profile-section" id="prof-mist" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto;">
+            <h3>📶 WiFi Connectivity</h3>
+            <div class="prof-loading">Checking Mist telemetry...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  modal.classList.add('active');
+
+  fetchDirectoryDetails(starId);
+  fetchPortalDetails(starId);
+  fetchUserSCCM(starId);
+  fetchUserTDX(starId, name);
+}
+
+async function fetchDirectoryDetails(starId) {
+  const container = document.getElementById('prof-identity');
+  try {
+    const res = await fetch(`/api/ad/${starId}`);
+    const data = await res.json();
+    if (data.status === 'success' && data.data && data.data.length > 0) {
+      const u = data.data[0];
+      
+      // Update header avatar image and title dynamically if headshot is present
+      if (u.Headshot) {
+        const headerTitle = document.querySelector('.unified-header h2');
+        if (headerTitle) {
+          headerTitle.innerHTML = `
+            <div style="width: 32px; height: 32px; background: url('https://www.smsu.edu/directory/${u.Headshot}') center/cover no-repeat; border-radius: 50%; border: 1.5px solid var(--accent); display:inline-block; vertical-align:middle; margin-right:6px;"></div>
+            <span style="vertical-align:middle;">Unified Profile</span>
+            <span style="opacity:0.5; font-weight:400; font-size:15px; margin-left:5px; vertical-align:middle;">(${starId})</span>
+          `;
+        }
+      }
+      
+      container.innerHTML = `
+        <div style="background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); border: 1.5px solid var(--accent); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; animation: slideIn 0.3s ease-out;">
+          <div style="display: flex; align-items: center; gap: 14px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 12px;">
+            <div style="width: 50px; height: 50px; background: ${u.Headshot ? `url('https://www.smsu.edu/directory/${u.Headshot}') center/cover no-repeat` : 'var(--accent)'}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1.5px solid var(--accent2); color: #fff;">
+              ${u.Headshot ? '' : '👤'}
+            </div>
+            <div style="flex:1;">
+              <h4 style="font-size:17px; font-weight:700; color:#fff; margin:0 0 3px 0;">${u.DisplayName || 'N/A'}</h4>
+              <div style="font-size:13.5px; color:var(--accent2); font-weight:600;">👔 ${u.Title || 'Student / Staff'}</div>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; font-size:13.5px; line-height:1.4;">
+            <div>💼 <strong>Department:</strong> <span style="color:#fff;">${u.Department || 'N/A'}</span></div>
+            <div>🚪 <strong>Office Location:</strong> <span style="color:#fff; font-weight:600;">🚪 ${u.Office || 'N/A'}</span></div>
+            <div>📧 <strong>Official Email:</strong> <span style="color:#fff;"><a href="mailto:${u.Email || (starId + '@smsu.edu')}" style="color:var(--accent2); text-decoration:none;">${u.Email || (starId + '@smsu.edu')}</a></span></div>
+            <div>📞 <strong>Phone Number:</strong> <span style="color:#fff;">${u.Phone || 'N/A'}</span></div>
+          </div>
+        </div>
+      `;
+    } else {
+      container.innerHTML = `<div style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; text-align:center; color:var(--text2); font-size:13px;">General identity details not found in Directory.</div>`;
+    }
+  } catch (e) {
+    container.innerHTML = `<div style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; text-align:center; color:var(--text2); font-size:13px;">Error loading general directory details.</div>`;
+  }
+}
+
+function closeUnifiedProfile() {
+  document.getElementById('unifiedProfileModal').classList.remove('active');
+}
+
+
+async function fetchPortalDetails(starId) {
+  const container = document.getElementById('prof-portal');
+  try {
+    const res = await fetch(`/api/scrape/starid/${starId}`);
+    const data = await res.json();
+    if (data.status === 'success' && data.data && data.data.length > 0) {
+      const u = data.data[0];
+      
+      // Update headshot in modal header dynamically if available
+      if (u.Headshot) {
+        const headerTitle = document.querySelector('.unified-header h2');
+        if (headerTitle) {
+          headerTitle.innerHTML = `
+            <div style="width: 32px; height: 32px; background: url('https://www.smsu.edu/directory/${u.Headshot}') center/cover no-repeat; border-radius: 50%; border: 1.5px solid var(--accent);"></div>
+            <span>${u.Name || 'User'}</span>
+            <span style="opacity:0.5; font-weight:400; font-size:15px; margin-left:5px;">(${u.StarID})</span>
+          `;
+        }
+      }
+
+      container.innerHTML = `
+        <h3>🔍 StarID Portal Details <span class="prof-badge">${u.Source === 'StarID Admin (Cached)' ? 'Cached' : 'Live'}</span></h3>
+        <div class="prof-data-item"><strong>StarID:</strong> <span>${u.StarID}</span></div>
+        <div class="prof-data-item"><strong>First Name:</strong> <span>${u.FirstName || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Informal Name:</strong> <span>${u.InformalName || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Middle Name:</strong> <span>${u.MiddleName || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Last Name:</strong> <span>${u.LastName || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Activation Status:</strong> <span style="color:var(--green); font-weight:700;">${u.ActivationStatus || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Lock Status:</strong> <span>${u.LockStatus || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Decommissioned:</strong> <span>${u.Decommissioned || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Password Expires:</strong> <span>📅 ${u.PasswordExpires || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Notification Email:</strong> <span>📧 ${u.NotificationEmail || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Email List:</strong> <span style="font-size:11px; opacity:0.85; word-break:break-all;">${u.EmailList || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>TechID List:</strong> <span style="color:var(--accent2); font-weight:600;">${u.TechID || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Library Barcodes:</strong> <span>${u.LibraryBarcode || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>State Employee Number:</strong> <span>${u.StateEmployeeNumber || 'N/A'}</span></div>
+        
+        <div style="font-size:11.5px; color:var(--text2); margin-top:12px; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px; line-height:1.45;">
+          <strong>ISRS Affiliation List:</strong><br>
+          <span style="font-family:monospace; opacity:0.8; font-size:10.5px; display:block; margin-top:3px; word-break:break-all;">${u.Affiliations || 'N/A'}</span>
+        </div>
+        
+        <div style="font-size:11.5px; color:var(--text2); margin-top:8px; line-height:1.45;">
+          <strong>Extra Affiliation List:</strong><br>
+          <span style="font-family:monospace; opacity:0.8; font-size:10.5px; display:block; margin-top:3px; word-break:break-all;">${u.ExtraAffiliationList || 'N/A'}</span>
+        </div>
+        
+        <div style="font-size:11.5px; color:var(--text2); margin-top:8px; line-height:1.45;">
+          <strong>Cohort List:</strong><br>
+          <span style="font-family:monospace; opacity:0.8; font-size:10.5px; display:block; margin-top:3px; word-break:break-all;">${u.CohortList || 'N/A'}</span>
+        </div>
+      `;
+    } else { container.innerHTML = `<h3>🔍 StarID Portal Details</h3><div class="prof-empty">No portal details found</div>`; }
+  } catch (e) { container.innerHTML = `<h3>🔍 StarID Portal Details</h3><div class="prof-empty">Error connecting to scraper</div>`; }
+}
+
+async function fetchUserSCCM(starId) {
+  const container = document.getElementById('prof-sccm');
+  try {
+    const res = await fetch(`/api/sccm/user/${starId}`);
+    const data = await res.json();
+    if (data.status === 'success' && data.data.length > 0) {
+      let html = `<h3>💻 SCCM Assets & Usage <span class="prof-badge">${data.data.length} Devices</span></h3>`;
+      data.data.forEach(pc => {
+        html += `
+          <div style="margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <div class="prof-data-item"><strong>PC Name:</strong> <span style="color:var(--accent); font-weight:700;">${pc.PCName}</span></div>
+            <div class="prof-data-item"><strong>Model:</strong> <span>${pc.Model}</span></div>
+            <div class="prof-data-item"><strong>Status:</strong> <span style="color:${pc.Status==='Online'?'var(--green)':'var(--text2)'};">${pc.Status}</span></div>
+          </div>
+        `;
+        if (pc.PCName) fetchUserMist(pc.PCName);
+      });
+      container.innerHTML = html;
+    } else { container.innerHTML = `<h3>💻 SCCM Assets & Usage</h3><div class="prof-empty">No devices found in SCCM</div>`; }
+  } catch (e) { container.innerHTML = `<h3>💻 SCCM Assets & Usage</h3><div class="prof-empty">Error querying SCCM</div>`; }
+}
+
+async function fetchUserTDX(starId, name) {
+  const container = document.getElementById('prof-tdx');
+  try {
+    const res = await fetch('/api/tdx/tickets');
+    const data = await res.json();
+    if (data.status === 'success') {
+      const userTickets = data.data.filter(t => t.requestor.toLowerCase().includes(starId.toLowerCase()) || name.toLowerCase().includes(t.requestor.toLowerCase()));
+      if (userTickets.length > 0) {
+        let html = `<h3>🎫 Support History (TDX) <span class="prof-badge">${userTickets.length} Total</span></h3>`;
+        userTickets.forEach(t => {
+          html += `
+            <div style="margin-bottom:10px; font-size:12px;">
+              <div style="font-weight:700; color:var(--text);">${t.title}</div>
+              <div style="display:flex; justify-content:space-between; opacity:0.7;">
+                <span>ID: ${t.id}</span>
+                <span style="color:var(--accent2);">${t.status}</span>
+              </div>
+            </div>
+          `;
+        });
+        container.innerHTML = html;
+      } else { container.innerHTML = `<h3>🎫 Support History (TDX)</h3><div class="prof-empty">No recent tickets found</div>`; }
+    }
+  } catch (e) { container.innerHTML = `<h3>🎫 Support History (TDX)</h3><div class="prof-empty">Error connecting to TDX</div>`; }
+}
+
+async function fetchUserMist(search) {
+  const container = document.getElementById('prof-mist');
+  try {
+    const res = await fetch(`/api/mist/${search}`);
+    const data = await res.json();
+    if (data.status === 'success' && data.data.length > 0) {
+      const c = data.data[0];
+      container.innerHTML = `
+        <h3>📶 WiFi Connectivity <span class="prof-badge">Online</span></h3>
+        <div class="prof-data-item"><strong>Connected to:</strong> <span>${c.ap_name}</span></div>
+        <div class="prof-data-item"><strong>SSID:</strong> <span>${c.ssid}</span></div>
+        <div class="prof-data-item"><strong>Signal:</strong> <span style="color:${c.rssi > -60 ? 'var(--green)' : 'var(--yellow)'};">${c.rssi} dBm</span></div>
+      `;
+    } else { container.innerHTML = `<h3>📶 WiFi Connectivity</h3><div class="prof-empty">No active WiFi session found</div>`; }
+  } catch (e) {}
+}

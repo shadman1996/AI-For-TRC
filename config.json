@@ -13,12 +13,12 @@
     { "id": "tickets", "name": "My Tickets", "icon": "🎫" },
     { "id": "directory", "name": "Directory", "icon": "📇" },
     { "id": "sccm", "name": "SCCM Tools", "icon": "💻" },
-    { "id": "ad", "name": "AD Management", "icon": "🔑" },
+    { "id": "ad", "name": "AD & User Management", "icon": "🔑" },
     { "id": "mist", "name": "Mist WiFi", "icon": "📶" },
     { "id": "form", "name": "TDX Form Guide", "icon": "📋" },
     { "id": "links", "name": "Quick Links", "icon": "🔗" },
     { "id": "wayfinding", "name": "Wayfinding", "icon": "🗺️" },
-    { "id": "settings", "name": "Admin Panel", "icon": "⚙️" }
+    { "id": "settings", "name": "Appearance Settings", "icon": "🎨" }
   ],
   "default_module_permissions": {
     "helpdesk": ["chat", "tickets", "directory", "form", "links", "wayfinding"],

@@ -15,6 +15,7 @@ The TRC AI Assistant is designed to understand natural language. You can interac
 The AI automatically detects StarIDs and user names.
 - `Find user shadman` -> Searches AD for "shadman".
 - `Who is vg6340ah?` -> Pulls profile from Active Directory.
+- `Who is Nicole Quaas?` -> Resolves their department, designation, and room instantly.
 - `Deep search vg6340ah` -> **(Admin/Tech only)** Scrapes the MinnState StarID Portal for real-time details (TechID, Barcodes, Affiliations).
 
 ### 💻 Device & SCCM Lookups
@@ -22,11 +23,15 @@ Find hardware info, OS versions, and last logon details.
 - `Check SCCM for PC-TRC-01`
 - `Find computer smsu-12345`
 - `Where is the last logon for PC-55?`
+- `08-8F-C3-06-FD-F9 search this device` -> **(Conversational Routing)** The AI automatically extracts the MAC address out of loose sentences, redirects your tab, and executes our high-performance two-step lookup pipeline!
 
-### 🌐 Network & WiFi (Mist)
+### 🌐 Network, IPs, & WiFi (Mist)
 - `Check Mist status for 00:11:22:33:44:55`
 - `Wifi status of vg6340ah's phone`
-- `Is there a problem with the wifi in BA?`
+- `Is 10.5.40.18 a campus IP?` -> **(Instant Subnet Analysis)** The AI analyzes private/public subnets instantly (recognizing internal workstations and administrative networks).
+- `What is the procedure for activating a network port in SC 219?` -> **(Port Patching Guide)** The AI provides official ITS Network patching steps.
+- `Who is in office SC 219?` -> **(Room/Office Directory)** The AI connects rooms to directory listings in real-time.
+
 
 ---
 

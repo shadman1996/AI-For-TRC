@@ -2,8 +2,13 @@ from playwright.sync_api import sync_playwright
 import time
 import json
 
+import sys
+
 def scrape_starid_admin(query: str, username: str, password: str):
-    print(f"Initializing Headless Browser to scrape StarID Admin for {query}...")
+    # Safe print to avoid charmap errors on Windows console
+    safe_print = lambda msg: sys.stdout.buffer.write((msg + '\n').encode('utf-8', errors='ignore'))
+    
+    safe_print(f"Initializing Headless Browser to scrape StarID Admin for {query}...")
     
     try:
         with sync_playwright() as p:
@@ -11,7 +16,7 @@ def scrape_starid_admin(query: str, username: str, password: str):
             context = browser.new_context()
             page = context.new_page()
             
-            print("Navigating to StarID Admin...")
+            safe_print("Navigating to StarID Admin...")
             page.goto("https://starid.minnstate.edu/admin/", timeout=15000)
             
             # Login
@@ -21,7 +26,7 @@ def scrape_starid_admin(query: str, username: str, password: str):
             
             # Wait for search page
             page.wait_for_selector("input#starid")
-            print(f"Searching for StarID: {query}")
+            safe_print(f"Searching for StarID: {query}")
             page.fill("input#starid", query)
             page.click("button.btn-primary")
             
@@ -57,17 +62,32 @@ def scrape_starid_admin(query: str, username: str, password: str):
                 except:
                     continue
 
-            # Normalize the data structure
+            # Normalize the data structure safely
+            name_text = "Unknown User"
+            if page.locator("h3").count() > 0:
+                raw_name = page.locator("h3").first.inner_text()
+                name_text = raw_name.encode('ascii', 'ignore').decode('ascii').strip()
+                
             data = {
-                "Name": page.locator("h3").first.inner_text().strip() if page.locator("h3").count() > 0 else "Unknown User",
-                "StarID": details.get("StarID", query),
-                "Email": details.get("Notification Email", details.get("Email List", "N/A")),
-                "PasswordExpires": details.get("Password Expires", "N/A"),
-                "Affiliations": details.get("ISRS Affiliation List", "N/A"),
+                "Status": details.get("Activation Status", "Active").split(' ')[0],
+                "Name": name_text,
+                "StarID": details.get("StarID", query).encode('ascii', 'ignore').decode('ascii'),
+                "FirstName": details.get("First Name", "N/A"),
+                "InformalName": details.get("Informal Name", "N/A"),
+                "MiddleName": details.get("Middle Name", "N/A"),
+                "LastName": details.get("Last Name", "N/A"),
                 "ActivationStatus": details.get("Activation Status", "N/A"),
-                "LastLogon": details.get("Last Logon", "N/A"),
+                "LockStatus": details.get("Lock Status", "N/A"),
+                "Decommissioned": details.get("Decommissioned", "N/A"),
+                "PasswordExpires": details.get("Password Expires", "N/A"),
+                "NotificationEmail": details.get("Notification Email", "N/A"),
+                "EmailList": details.get("Email List", "N/A"),
                 "TechID": details.get("TechID List", "N/A"),
                 "LibraryBarcode": details.get("Library Barcodes", "N/A"),
+                "StateEmployeeNumber": details.get("State Employee Number", "N/A"),
+                "Affiliations": details.get("ISRS Affiliation List", "N/A"),
+                "ExtraAffiliationList": details.get("Extra Affiliation List", "N/A"),
+                "CohortList": details.get("Cohort List", "N/A"),
                 "Title": details.get("Title", "N/A"),
                 "Department": details.get("Department", "N/A"),
                 "Source": "StarID Admin Scraper"
