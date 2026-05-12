@@ -4,6 +4,10 @@
     "endpoint": "http://127.0.0.1:11434/api/generate",
     "model": "phi3:mini"
   },
+  "starid_admin": {
+    "username": "vg6340ah",
+    "password": "Temp@2026!!"
+  },
   "modules": [
     { "id": "chat", "name": "AI Assistant", "icon": "🤖" },
     { "id": "tickets", "name": "My Tickets", "icon": "🎫" },

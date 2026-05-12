@@ -1,17 +1,17 @@
 /* ===== RESET & BASE ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #0f1117;
-  --bg2: #1a1d27;
-  --bg3: #22263a;
-  --border: #2e3250;
-  --accent: #5b6ef5;
-  --accent2: #7c8fff;
+  --bg: #1f1815;
+  --bg2: #2a211c;
+  --bg3: #3f312a;
+  --border: #53423a;
+  --accent: #c79a00;
+  --accent2: #e8b600;
   --green: #22c55e;
   --yellow: #f59e0b;
   --red: #ef4444;
-  --text: #e8eaf6;
-  --text2: #9399c4;
+  --text: #fdfbf8;
+  --text2: #c5b6ae;
   --radius: 14px;
   --shadow: 0 4px 24px rgba(0,0,0,0.4);
 }
@@ -79,6 +79,108 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .msg-bubble .field-row { display: flex; gap: 8px; margin: 4px 0; font-size: 13px; }
 .msg-bubble .field-label { color: var(--text2); min-width: 140px; }
 .msg-bubble .field-val { color: var(--green); font-weight: 600; }
+/* Deep Search Results Card */
+.deep-search-card {
+    background: linear-gradient(135deg, rgba(199, 154, 0, 0.15) 0%, rgba(199, 154, 0, 0.05) 100%);
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 10px 0;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    animation: slideIn 0.3s ease-out;
+}
+
+.deep-search-card .card-header {
+    background: var(--accent);
+    color: white;
+    padding: 8px 15px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+}
+
+.deep-search-card .card-body {
+    padding: 15px;
+}
+
+.deep-search-card .user-main {
+    margin-bottom: 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 10px;
+}
+
+.deep-search-card .user-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.deep-search-card .user-starid {
+    font-size: 14px;
+    opacity: 0.8;
+    font-family: monospace;
+}
+
+.deep-search-card .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.deep-search-card .detail-item {
+    font-size: 13px;
+}
+
+.deep-search-card .detail-item .label {
+    font-weight: 600;
+    color: var(--text2);
+    margin-right: 5px;
+}
+
+.deep-search-card .detail-item .val {
+    color: var(--text);
+}
+
+.deep-search-card .detail-item .val.status-active {
+    color: #22c55e;
+    font-weight: 700;
+}
+
+.deep-search-card .affiliation-box {
+    background: rgba(0,0,0,0.2);
+    padding: 10px;
+    border-radius: 6px;
+    margin-top: 10px;
+}
+
+.deep-search-card .affiliation-box .label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+}
+
+.deep-search-card .affiliation-box .val {
+    font-size: 11px;
+    line-height: 1.4;
+    opacity: 0.9;
+}
+
+.deep-search-card .card-footer {
+    font-size: 10px;
+    opacity: 0.5;
+    margin-top: 15px;
+    text-align: right;
+    font-style: italic;
+}
+
+@keyframes slideIn {
+    from { transform: translateY(10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
 .msg-bubble .escalate { background: rgba(245,158,11,0.15); border: 1px solid var(--yellow); border-radius: 8px; padding: 8px 12px; margin-top: 10px; font-size: 13px; }
 .typing { display: flex; gap: 4px; align-items: center; padding: 14px 18px; }
 .typing span { width: 8px; height: 8px; background: var(--text2); border-radius: 50%; animation: bounce 1.2s infinite; }
@@ -102,6 +204,36 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
   transition: all 0.2s; white-space: nowrap;
 }
 .send-btn:hover { background: var(--accent2); transform: translateY(-1px); }
+
+/* --- SCCM & Remote Actions --- */
+.sccm-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 15px;
+    margin: 10px 0;
+    box-shadow: var(--shadow);
+}
+.btn-small {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.btn-small:hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+.btn-small.btn-danger:hover {
+    background: var(--red);
+    border-color: var(--red);
+}
 
 /* --- AI COMMAND BAR --- */
 .ai-command-bar {

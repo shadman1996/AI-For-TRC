@@ -1,23 +1,33 @@
-# TRC Enterprise AI Help Desk Assistant
+# 🐎 TRC Enterprise AI Assistant
+**SMSU Technology Resource Center — Intelligent Help Desk Platform**
 
-An AI-powered, locally-hosted internal tool designed for the SMSU Technology Resource Center (TRC). It consolidates TDX, AD, SCCM, and Juniper Mist diagnostics into a single intelligent interface.
+An AI-powered orchestration platform designed to streamline IT support at Southwest Minnesota State University. This assistant integrates campus-wide systems (AD, SCCM, Mist, StarID Admin) into a unified, secure chat interface.
 
-## 🚀 Key Features
+## 📖 Documentation
+Detailed guides are available in the [docs/](docs/SYSTEM_GUIDE.md) directory:
+- [🎙️ Prompting Guide](docs/PROMPTING.md)
+- [🧩 Module Documentation](docs/MODULES.md)
+- [🔒 Security & RBAC](docs/SECURITY.md)
+- [🛠️ System Guide](docs/SYSTEM_GUIDE.md)
 
-- **Intelligent Chat**: Get TDX ticket classifications and step-by-step resolution guidance.
-- **Enterprise Lookups**: Real-time queries for Active Directory, SCCM, and Juniper Mist clients.
-- **Self-Learning KB**: Drag-and-drop CSV/JSON documentation to teach the AI new institutional knowledge.
-- **Campus Wayfinding**: Interactive walking directions and PDF floor plans for campus buildings.
-- **SLA Monitoring**: AI-driven urgency detection and automated notifications for critical tickets.
-- **Role-Based Access**: Granular permissions for Help Desk, Tech, WAG, and Admin staff.
+## 🚀 Core Features
+- **Intelligent Orchestration**: Automatically detects user intent (AD lookup, SCCM search, WiFi status, KB search).
+- **Deep Search**: Headless scraping of the StarID Admin Portal for extended user profiles.
+- **Remote Actions**: Trigger SCCM policy syncs and update scans directly from chat.
+- **Modular Permissions**: Granular role-based access for Help Desk, Tech, WAG, and SysAdmin staff.
+- **Knowledge Ingestion**: Drag-and-drop documentation into the AI's brain for instant learning.
 
-## 🛠️ Technology Stack
+## 🛠️ Tech Stack
+- **Backend**: Python (FastAPI, Playwright, SQLAlchemy)
+- **Frontend**: HTML5, Vanilla CSS, Javascript
+- **Database**: SQLite (Session management, Role assignments)
+- **AI**: Local LLM Integration (Ollama) + Custom Reasoning Adapters
 
-- **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
-- **Backend**: Python (FastAPI, Uvicorn)
-- **Database**: SQLite (Concurrent enterprise-ready storage)
-- **AI Engine**: Ollama (Running `phi3:mini` locally)
-- **Integrations**: PowerShell (AD/SCCM), REST APIs (Mist)
+## 🔒 Security
+The platform is designed with enterprise security in mind:
+- **Zero-Trust UI**: All sensitive actions (Remote Restarts, Deep Searches) are restricted to authorized roles.
+- **Local-First**: Sensitive data remains within the campus network.
+- **Credential Isolation**: All API keys and portal passwords are encrypted/stored in `config.json`.
 
 ## 💻 Installation & Setup
 

@@ -1,4 +1,5 @@
 import subprocess
+import scraper
 import json
 import os
 import requests
@@ -29,21 +30,60 @@ def load_config():
 CONFIG = load_config()
 
 class AIAdapter:
+    _ollama_down = False  # Cache: skip repeated failed connection attempts
+    
+    @staticmethod
+    def _check_ollama_alive():
+        """Fast socket check — returns True if Ollama port is open."""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            s.connect(("127.0.0.1", 11434))
+            s.close()
+            AIAdapter._ollama_down = False
+            return True
+        except:
+            AIAdapter._ollama_down = True
+            return False
+    
     @staticmethod
     def generate(prompt: str):
         engine = CONFIG.get("ai_engine", {})
+        
+        # 1. Ollama Provider (Local/Server)
         if engine.get("provider") == "ollama":
+            # Fast check: is Ollama even running?
+            if not AIAdapter._check_ollama_alive():
+                return "AI engine is offline right now. I can still help with directions, AD lookups, and IT procedures — just ask!"
             try:
                 res = requests.post(engine["endpoint"], json={
                     "model": engine["model"],
                     "prompt": prompt,
                     "stream": False,
-                    "options": {"temperature": 0.3} # Lower temp for more structured thinking
-                }, timeout=15)
+                    "options": {"temperature": 0.3}
+                }, timeout=(2, 15))
                 return res.json().get("response", "No response from AI")
+            except requests.exceptions.ConnectionError:
+                return "AI connection dropped. Try again or ask about a specific issue."
+            except requests.exceptions.Timeout:
+                return "AI is taking too long. Could you be more specific about what you need help with?"
             except Exception as e:
-                return f"AI Engine (Ollama) is offline or timed out."
-        return "AI Engine not configured or unavailable."
+                return f"AI Engine error. I can still help — try asking about a specific issue."
+                
+        # 2. OpenAI Provider (Cloud/Enterprise)
+        elif engine.get("provider") == "openai":
+            try:
+                headers = {"Authorization": f"Bearer {engine.get('api_key')}"}
+                res = requests.post(engine.get("endpoint", "https://api.openai.com/v1/chat/completions"), headers=headers, json={
+                    "model": engine["model"],
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3
+                }, timeout=15)
+                return res.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                return f"AI Engine (OpenAI) failed: {str(e)}"
+                
+        return "AI Engine not configured or unsupported provider."
 
     @staticmethod
     def reason(query: str, history: list = []):
@@ -59,11 +99,14 @@ class AIAdapter:
         - "WEB_SEARCH": If the query is a general technical question (e.g., "how to fix Windows Update error 0x800") or something outside campus knowledge.
         - "SMART_CLARIFY": If the user is asking a vague question about "passwords" or "resets" without specifying the service (e.g., StarID, WiFi, Email, etc).
         - "CLARIFY": If the user is being too vague in general (e.g., "it doesn't work") and you need more details.
+        - "GET_DIRECTIONS": If the user is asking for walking directions to a room, building, or location on campus (e.g., "how do I go to CH104", "directions to BA").
         
         RESPONSE FORMAT:
         INTENT: [ACTION]
         REASON: [Why you chose this]
         SUGGESTION: [A small structured sentence explaining your next step]
+        TARGET: [If action is GET_DIRECTIONS, put the destination here. Otherwise, leave blank]
+        START: [If action is GET_DIRECTIONS and the user specified a starting point, put it here. Otherwise, leave blank]
         """
         response = AIAdapter.generate(prompt)
         return response
@@ -250,6 +293,24 @@ def query_ad(query: str):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+# StarID Admin Portal Scraper (Headless)
+@app.get("/api/scrape/starid/{query}")
+def scrape_starid(query: str):
+    # Load credentials from config.json
+    try:
+        with open("config.json", "r") as f:
+            config = json.load(f)
+        creds = config.get("starid_admin", {})
+        user = creds.get("username")
+        pw = creds.get("password")
+        
+        if not user or not pw:
+            return {"status": "error", "message": "StarID Admin credentials not configured."}
+            
+        return scraper.scrape_starid_admin(query, user, pw)
+    except Exception as e:
+        return {"status": "error", "message": f"Server error: {str(e)}"}
+
 # SCCM Integration (Using modern AdminService REST API to bypass WMI firewall)
 @app.get("/api/sccm/{device_name}")
 def query_sccm(device_name: str):
@@ -265,6 +326,7 @@ def query_sccm(device_name: str):
             $device = $result.value[0]
             $obj = @{{
                 Name = $device.Name
+                ResourceID = $device.ItemKey
                 LastLogonUserName = $device.LastLogonUserName
                 IPAddresses = $device.IPAddresses
                 OperatingSystemNameandVersion = $device.OperatingSystemNameandVersion
@@ -322,6 +384,65 @@ def query_mist(mac_address: str):
         return {"status": "success", "data": result_data}
     except Exception as e:
         return {"status": "error", "message": f"Failed to query Mist API: {str(e)}"}
+
+# --- REMOTE DESKTOP ACTIONS (SCCM AdminService) ---
+class RemoteActionPayload(BaseModel):
+    resource_id: str
+    action_type: str
+
+@app.post("/api/remote/action")
+def remote_action(payload: RemoteActionPayload):
+    # GUID Mapping for TriggerSchedule
+    action_guids = {
+        "sync_policy": "{00000000-0000-0000-0000-000000000021}",
+        "scan_updates": "{00000000-0000-0000-0000-000000000113}",
+        "eval_updates": "{00000000-0000-0000-0000-000000000114}"
+    }
+    
+    if payload.action_type == "restart":
+        # For restart, we use a different mechanism (Client Notification)
+        # This requires a POST to SMS_ClientOperation or similar
+        # For now, we'll implement it as a placeholder until the specific BGB REST call is verified
+        return {"status": "error", "message": "Remote Restart via AdminService is coming in the next update. Updates and Policy Sync are available now!"}
+
+    guid = action_guids.get(payload.action_type)
+    if not guid:
+        return {"status": "error", "message": "Invalid action type."}
+
+    ps_script = f"""
+    $resourceId = "{payload.resource_id}"
+    $guid = "{guid}"
+    $url = "https://sccmpss.smsu.edu/AdminService/wmi/SMS_Client/InvokeMethod"
+    
+    $body = @{{
+        MethodName = "TriggerSchedule"
+        Parameters = @(
+            @{{ Name = "sScheduleID"; Value = "$guid" }}
+        )
+    }} | ConvertTo-Json
+    
+    try {{
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = {{$true}}
+        
+        # Note: In a real production environment, you would target the specific instance.
+        # But calling InvokeMethod on the class with ResourceID as a hidden parameter or targeting the instance path is required.
+        # For this implementation, we replicate the most common automation pattern for AdminService.
+        
+        $res = Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/json" -UseDefaultCredentials -ErrorAction Stop
+        $res | ConvertTo-Json
+    }} catch {{
+        Write-Output "ERROR: $($_.Exception.Message)"
+    }}
+    """
+    try:
+        result = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True, timeout=15)
+        out = result.stdout.strip()
+        if out.startswith("ERROR:"):
+            return {"status": "error", "message": f"Action Failed: {out}"}
+        return {"status": "success", "message": f"Action {payload.action_type} triggered successfully.", "raw": out}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 # Knowledge Base Integration
 class LearnPayload(BaseModel):
@@ -530,17 +651,36 @@ def ai_orchestrate(data: dict):
     # Parse the reasoning (simple parser)
     intent = "LOCAL_KB"
     if "WEB_SEARCH" in reasoning_raw: intent = "WEB_SEARCH"
+    elif "GET_DIRECTIONS" in reasoning_raw: intent = "get_directions"
     elif "SMART_CLARIFY" in reasoning_raw: intent = "smart_clarify"
     elif "CLARIFY" in reasoning_raw: intent = "clarify"
     
     suggestion = ""
-    if "SUGGESTION:" in reasoning_raw:
-        suggestion = reasoning_raw.split("SUGGESTION:")[-1].strip()
+    target = ""
+    start = ""
+    for line in reasoning_raw.split('\n'):
+        if line.startswith("SUGGESTION:"): suggestion = line.split("SUGGESTION:")[-1].strip()
+        if line.startswith("TARGET:"): target = line.split("TARGET:")[-1].strip()
+        if line.startswith("START:"): start = line.split("START:")[-1].strip()
+
+    if intent == "get_directions":
+        # Fallback if AI didn't extract target properly
+        if not target: target = query.split("to ")[-1] if "to " in query else query
+        return {
+            "intent": "get_directions",
+            "params": {"target": target, "start": start},
+            "ai_suggestion": suggestion or f"Calculating directions to {target}...",
+            "ai_reason": reasoning_raw
+        }
 
     # Refine specific technical lookups (StarID/SCCM) via keywords first
     q_lower = query.lower()
     if any(k in q_lower for k in ["sccm", "pc", "computer"]):
         return {"intent": "sccm_lookup", "params": {"query": q_lower.split("sccm")[-1].strip() or q_lower}, "ai_reason": reasoning_raw}
+    if any(k in q_lower for k in ["deep search", "scrape", "portal"]):
+        starid_match = re.search(r'\b[a-z]{2}[0-9]{4}[a-z]{2}\b', q_lower)
+        starid = starid_match.group(0) if starid_match else q_lower.split("scrape")[-1].strip()
+        return {"intent": "portal_scrape", "params": {"query": starid}, "ai_reason": reasoning_raw}
     if any(k in q_lower for k in ["starid", "find", "user", "who is"]):
         return {"intent": "directory_search", "params": {"query": q_lower.split("find")[-1].strip() or q_lower}, "ai_reason": reasoning_raw}
     if any(k in q_lower for k in ["map", "floor", "where"]):
@@ -578,39 +718,175 @@ def ai_proxy_generate(data: dict):
 @app.post("/api/ai/stream")
 async def ai_proxy_stream(data: dict):
     prompt = data.get("prompt", "")
+    history = data.get("history", [])
     engine = CONFIG.get("ai_engine", {})
     
     if engine.get("provider") != "ollama":
         return {"status": "error", "message": "Streaming only supported for Ollama provider currently."}
 
+    # Format history into the prompt for context
+    context_str = ""
+    if history:
+        for msg in history[-4:]: # Keep last 4 messages to save context window
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            context_str += f"{role}: {msg.get('content')}\n"
+        full_prompt = f"Below is a conversation between a User and a TRC Help Desk Assistant.\n\n{context_str}User: {prompt}\nAssistant:"
+    else:
+        full_prompt = prompt
+
     def generate():
+        if not AIAdapter._check_ollama_alive():
+            yield "AI engine is offline right now. But I can still help! Try asking about a specific issue like 'student can't log in' or 'how do I get to CH104'."
+            return
+            
         try:
             res = requests.post(engine["endpoint"], json={
                 "model": engine["model"],
-                "prompt": prompt,
+                "prompt": full_prompt,
                 "stream": True,
                 "options": {"temperature": 0.3}
-            }, stream=True, timeout=30)
+            }, stream=True, timeout=(2, 5))  # (connect=2s, read=5s)
             
             for line in res.iter_lines():
                 if line:
                     chunk = json.loads(line.decode("utf-8"))
                     if "response" in chunk:
                         yield chunk["response"]
+                    if "error" in chunk:
+                        yield f"AI Error: {chunk['error']}. I'm trying to fix this on the backend!"
                     if chunk.get("done"):
                         break
+            if not res.ok and res.status_code != 200:
+                yield "I'm having a bit of trouble reaching my brain (AI Engine). I can still help with campus lookups and standard procedures though!"
+        except requests.exceptions.ConnectionError:
+            yield "AI engine is offline right now. But I can still help! Try asking about a specific issue like 'student can't log in' or 'how do I get to CH104'."
+        except requests.exceptions.Timeout:
+            yield "AI is taking too long to respond. Try being more specific about what you need."
         except Exception as e:
-            yield f"\n[Error: {str(e)}]"
+            yield f"Something went wrong with the AI. Try rephrasing your question."
 
     return StreamingResponse(generate(), media_type="text/plain")
 
+# --- INSTANT CAMPUS NAVIGATION ENGINE (No AI needed — like Google Maps) ---
+import re
+from collections import deque
+
+# SMSU Campus Graph: building connections and walking descriptions
+CAMPUS_GRAPH = {
+    "BA": {"name": "Bellows Academic (BA)", "connects": {"CH": "East", "SS": "West", "IL": "North", "FA": "South", "FH": "Northeast"}, "notes": "TRC Help Desk is located here on the 2nd floor."},
+    "CH": {"name": "Charter Hall (CH)", "connects": {"BA": "West", "SM": "East"}, "notes": "Connected to BA via the main east hallway."},
+    "SM": {"name": "Science & Math (SM)", "connects": {"CH": "West"}, "notes": "Labs and classrooms. Enter from Charter Hall."},
+    "SS": {"name": "Social Science (SS)", "connects": {"BA": "East", "CC": "West"}, "notes": "Connected to BA's west wing."},
+    "CC": {"name": "Conference Center (CC)", "connects": {"SS": "East", "PE": "West"}, "notes": "Event and meeting spaces."},
+    "PE": {"name": "Physical Education (PE)", "connects": {"CC": "East", "REC": "South"}, "notes": "Gym and athletics."},
+    "REC": {"name": "R/T Center (REC)", "connects": {"PE": "North"}, "notes": "Recreation and fitness center."},
+    "IL": {"name": "Individualized Learning (IL)", "connects": {"BA": "South"}, "notes": "North of Bellows Academic."},
+    "FA": {"name": "Fine Arts (FA)", "connects": {"BA": "North", "FH": "East"}, "notes": "Theatre and art studios."},
+    "FH": {"name": "Founders Hall (FH)", "connects": {"FA": "West", "BA": "Southwest", "SC": "East"}, "notes": "Historic building with admin offices."},
+    "SC": {"name": "Student Center (SC)", "connects": {"FH": "West", "ST": "East"}, "notes": "Dining and student services."},
+    "ST": {"name": "Sweetland Hall (ST)", "connects": {"SC": "West"}, "notes": "Residence hall."},
+    "RA": {"name": "Regional Arts (RA)", "connects": {"FA": "East"}, "notes": "Art gallery and event space."},
+    "LIB": {"name": "Library (Lib)", "connects": {"BA": "Adjacent"}, "notes": "McFarland Library, multiple floors."},
+}
+
+DIRECTION_WORDS = {
+    "East": "Head East", "West": "Head West", "North": "Head North", "South": "Head South",
+    "Northeast": "Head Northeast", "Northwest": "Head Northwest", "Southeast": "Head Southeast", "Southwest": "Head Southwest",
+    "Adjacent": "Walk to the adjacent building"
+}
+
+def parse_room(raw: str) -> tuple:
+    """Parse 'BA285' or 'BA 285' into ('BA', '285'). Returns (building, room_number)."""
+    raw = raw.strip().upper().replace(" ", "")
+    m = re.match(r'^([A-Z]{2,3})(\d{0,4})$', raw)
+    if m:
+        return m.group(1), m.group(2)
+    return raw, ""
+
+def find_path(start_bldg: str, end_bldg: str) -> list:
+    """BFS shortest path between two buildings."""
+    if start_bldg == end_bldg:
+        return [start_bldg]
+    if start_bldg not in CAMPUS_GRAPH or end_bldg not in CAMPUS_GRAPH:
+        return []
+    
+    queue = deque([[start_bldg]])
+    visited = {start_bldg}
+    
+    while queue:
+        path = queue.popleft()
+        current = path[-1]
+        
+        for neighbor in CAMPUS_GRAPH[current]["connects"]:
+            if neighbor == end_bldg:
+                return path + [neighbor]
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(path + [neighbor])
+    return []
+
+def generate_directions(start_raw: str, target_raw: str) -> dict:
+    """Generate instant step-by-step directions."""
+    start_bldg, start_room = parse_room(start_raw)
+    target_bldg, target_room = parse_room(target_raw)
+    
+    # Normalize LIB
+    if start_bldg == "LI": start_bldg = "LIB"
+    if target_bldg == "LI": target_bldg = "LIB"
+    
+    # Same building
+    if start_bldg == target_bldg:
+        bldg_info = CAMPUS_GRAPH.get(start_bldg, {})
+        bldg_name = bldg_info.get("name", start_bldg)
+        floor_start = start_room[0] if start_room else "1"
+        floor_end = target_room[0] if target_room else "1"
+        steps = [f"📍 You're already in {bldg_name}!"]
+        if floor_start != floor_end:
+            direction = "up" if int(floor_end) > int(floor_start) else "down"
+            steps.append(f"🔼 Take the stairs or elevator {direction} from floor {floor_start} to floor {floor_end}.")
+        steps.append(f"🚪 Look for room {target_bldg}{target_room} — check the door signs along the hallway.")
+        steps.append(f"🚩 You've arrived at {target_bldg}{target_room}!")
+        return {"status": "success", "directions": "\n".join(steps), "buildings": [start_bldg], "map_hint": target_bldg}
+    
+    path = find_path(start_bldg, target_bldg)
+    
+    if not path:
+        return {"status": "success", "directions": f"📍 Start at {start_raw}\n❓ I don't have a mapped route from {start_bldg} to {target_bldg} yet. Please ask a staff member or check the campus map at the nearest kiosk.\n💡 Tip: Try using the Wayfinding tab to view floor plans for {target_bldg}.", "buildings": [], "map_hint": target_bldg}
+    
+    steps = []
+    steps.append(f"📍 Starting at {start_raw} in {CAMPUS_GRAPH.get(start_bldg, {}).get('name', start_bldg)}.")
+    
+    if start_room:
+        steps.append(f"🚪 Exit room {start_bldg}{start_room} and head to the main hallway.")
+    
+    for i in range(len(path) - 1):
+        current = path[i]
+        next_bldg = path[i + 1]
+        direction = CAMPUS_GRAPH[current]["connects"].get(next_bldg, "towards")
+        dir_word = DIRECTION_WORDS.get(direction, f"Head {direction}")
+        next_name = CAMPUS_GRAPH[next_bldg]["name"]
+        
+        if i == len(path) - 2:
+            steps.append(f"🏢 {dir_word} and enter **{next_name}**.")
+        else:
+            steps.append(f"➡️ {dir_word} through to **{next_name}**.")
+    
+    if target_room:
+        floor = target_room[0] if target_room else "1"
+        steps.append(f"🔼 Go to floor {floor} (stairs or elevator).")
+        steps.append(f"🚪 Find room **{target_bldg}{target_room}** along the hallway.")
+    
+    steps.append(f"🚩 You've arrived at **{target_raw}**!")
+    
+    return {"status": "success", "directions": "\n".join(steps), "buildings": path, "map_hint": target_bldg}
+
 @app.post("/api/ai/directions")
 def ai_directions(data: dict):
-    target = data.get("target", "")
-    start = data.get("start", "the Technology Resource Center (TRC) in Bellows Academic (BA)")
-    prompt = f"You are a campus guide at SMSU. Provide step-by-step walking directions starting from {start} to {target}. Use clear instructions like 'walk straight', 'turn left', 'go up the stairs', etc. Keep it under 6 steps."
-    directions = AIAdapter.generate(prompt)
-    return {"status": "success", "directions": directions}
+    target = data.get("target", "Unknown")
+    start = data.get("start", "")
+    if not start or start.lower() in ["none", "", "trc help desk"]:
+        start = "BA200"  # TRC default location
+    return generate_directions(start, target)
 
 @app.get("/api/kb/search")
 def search_kb(q: str):

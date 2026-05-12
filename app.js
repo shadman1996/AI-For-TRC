@@ -180,10 +180,84 @@ async function sendMessage() {
   const typingId = 'typing-' + Date.now();
   appendTyping(typingId);
   
-  // Try AI first, fallback to keyword matching
-  let matchedFaq = null;
+  // --- FAST LOCAL INTENT DETECTION (runs FIRST, no AI call needed) ---
+  const lower = text.toLowerCase();
   
-  // Check Enterprise Tools First
+  // Combined: "I am at BA285 how do I go to CH104"
+  const combinedMatch = lower.match(/(?:i.?m at|i am at|i am in front of)\s+([a-z]{2,3}\s*\d{0,4})\s*[,.]?\s*(?:how\s+(?:do\s+i|can\s+i|to)\s+(?:go|get|walk|navigate)\s+to|take\s+me\s+to|directions?\s+to|go\s+to|walk\s+to)\s+(.+)/i);
+  if (combinedMatch) {
+    userCurrentLocation = combinedMatch[1].trim().toUpperCase();
+    const target = combinedMatch[2].trim().replace(/[?.!]+$/, '').toUpperCase();
+    removeTyping(typingId);
+    getDirections(target, userCurrentLocation);
+    return;
+  }
+
+  // Location setting only: "i am at BA285"
+  const locMatch = lower.match(/(?:i am at|i'm at|im at|i am in front of|i'm in front of|im in front of)\s+([a-z]{2,3}\s*\d{0,4}[a-z]?\s*)$/i);
+  if (locMatch) {
+    userCurrentLocation = locMatch[1].trim().toUpperCase();
+    removeTyping(typingId);
+    appendMessage(`📍 Got it! I'll remember you're at **${userCurrentLocation}**. Where do you need to go?`, 'ai');
+    return;
+  }
+
+  // Directions: "how do i go to CH104", "directions to BA", "take me to SM200"
+  const dirPatterns = [
+    /(?:how\s+(?:do\s+i|can\s+i|to)\s+(?:go|get|walk|navigate)\s+(?:to|from))\s+(.+)/i,
+    /(?:directions?\s+(?:to|from))\s+(.+)/i,
+    /(?:take\s+me\s+to)\s+(.+)/i,
+    /(?:where\s+is)\s+([a-z]{2,3}\s*\d{2,4})/i,
+    /(?:go\s+to)\s+(.+)/i,
+    /(?:navigate\s+to)\s+(.+)/i,
+    /(?:walk\s+to)\s+(.+)/i,
+    /(?:from\s+)([a-z]{2,3}\s*\d{2,4})\s+(?:to)\s+([a-z]{2,3}\s*\d{2,4})/i,
+  ];
+  for (const pat of dirPatterns) {
+    const m = text.match(pat);
+    if (m) {
+      removeTyping(typingId);
+      if (m[2]) {
+        userCurrentLocation = m[1].trim().toUpperCase();
+        getDirections(m[2].trim().toUpperCase(), userCurrentLocation);
+      } else {
+        let target = m[1].trim();
+        const fromSplit = target.match(/(.+?)\s+from\s+(.+)/i);
+        if (fromSplit) {
+          target = fromSplit[1].trim();
+          userCurrentLocation = fromSplit[2].trim().toUpperCase();
+        }
+        getDirections(target.toUpperCase(), userCurrentLocation);
+      }
+      return;
+    }
+  }
+
+  // Room code correction (e.g. user just types "BA285" after a directions query)
+  const roomCodeMatch = text.match(/^([a-z]{2,3})\s*(\d{2,4})$/i);
+  if (roomCodeMatch) {
+    const lastAI = chatHistory.filter(h => h.role === 'assistant').slice(-1)[0];
+    const lastUser = chatHistory.filter(h => h.role === 'user').slice(-2, -1)[0];
+    const recentContext = (lastAI?.content || '') + ' ' + (lastUser?.content || '');
+    if (/direction|go to|walk|navigate|where|from|route|Calculating/i.test(recentContext)) {
+      removeTyping(typingId);
+      userCurrentLocation = text.trim().toUpperCase();
+      const targetMatch = recentContext.match(/(?:to|go to|get to|directions? to)\s+([a-z]{2,3}\s*\d{2,4})/i);
+      if (targetMatch) {
+        appendMessage(`📍 Updated! Starting from **${userCurrentLocation}** instead.`, 'ai');
+        getDirections(targetMatch[1].trim().toUpperCase(), userCurrentLocation);
+      } else {
+        appendMessage(`📍 Got it, you're at **${userCurrentLocation}**. Where do you need to go?`, 'ai');
+      }
+      return;
+    }
+  }
+
+  // Track history for conversational context
+  chatHistory.push({ role: 'user', content: text });
+  if (chatHistory.length > 8) chatHistory.shift();
+
+  // Check Enterprise Tools (AD, SCCM, Mist, etc.)
   const handledByTool = await checkEnterpriseTools(text);
   if (handledByTool) {
     removeTyping(typingId);
@@ -196,17 +270,7 @@ async function sendMessage() {
     return;
   }
   
-  if (text.toLowerCase().includes("i am in front of") || text.toLowerCase().includes("i am at")) {
-    const loc = text.replace(/i am in front of/i, '').replace(/i am at/i, '').trim();
-    userCurrentLocation = loc;
-    appendMessage(`📍 Got it! I'll remember that you are currently at **${loc}**. Where can I help you get to?`, 'ai');
-    removeTyping(typingId);
-    return;
-  }
-
-  if (isAIReady) {
-    matchedFaq = await getAIPrediction(text);
-  }
+  let matchedFaq = await getAIPrediction(text);
   
   if (!matchedFaq) {
     matchedFaq = getKeywordPrediction(text);
@@ -218,32 +282,31 @@ async function sendMessage() {
     lastMatchedFaq = matchedFaq;
     renderFaqResponse(matchedFaq);
   } else {
-    // Search the Custom KB / Exported KB
+    // No FAQ match — still keep talking!
+    removeTyping(typingId);
+    
+    // Quick KB check (non-blocking, short timeout)
+    let kbFound = false;
     try {
-      appendTyping(typingId);
-      const res = await fetch(`/api/kb/search?q=${encodeURIComponent(text)}`);
+      const kbController = new AbortController();
+      const kbTimeout = setTimeout(() => kbController.abort(), 3000);
+      const res = await fetch(`/api/kb/search?q=${encodeURIComponent(text)}`, { signal: kbController.signal });
+      clearTimeout(kbTimeout);
       const data = await res.json();
-      removeTyping(typingId);
       
       if (data.status === "success" && data.data) {
+        kbFound = true;
         if (data.data.source === "Self-Learned") {
           appendMessage(`🧠 **From My Memory:**<br>${data.data.content}`, 'ai');
         } else {
           appendMessage(`📚 **Found in TDX KB: ${data.data.title}**<br>${data.data.content}`, 'ai');
         }
-        return; // Success!
       }
-    } catch (e) { removeTyping(typingId); }
+    } catch (e) { /* KB unavailable — that's fine, move on */ }
     
-    // If still no match, use the AI Stream for a general answer
-    appendTyping(typingId);
-    await streamAIResponse(text, typingId);
-    
-    if (lastMatchedFaq) {
-      // Context-aware fallback: assume they are continuing the previous topic
-      appendMessage(`Got it! Since we're still talking about **${lastMatchedFaq.service}**, make sure to add that detail ("*${text}*") into the TDX ticket **Description** field so the assigned team has all the context.`, 'ai');
-    } else {
-      initiateQA(text);
+    if (!kbFound) {
+      // Go straight to AI stream — it shows "Let me think about that..." immediately
+      await streamAIResponse(text, typingId);
     }
   }
 }
@@ -352,17 +415,18 @@ async function checkEnterpriseTools(text) {
     return true;
   }
 
-  // Auto-Detect StarID or Search Intent (Find, Who is, Lookup)
+  // Auto-Detect StarID or Search Intent (Find, Who is, Lookup, Deep Search)
   const starIdMatch = text.match(/\b[a-z]{2}[0-9]{4}[a-z]{2}\b/i);
+  const isDeepSearch = lower.startsWith("deep search") || lower.startsWith("scrape") || lower.includes("portal search");
   const isSearchIntent = (lower.startsWith("find ") || lower.startsWith("who is ") || lower.startsWith("lookup ") || lower.startsWith("search ")) && !lower.includes("google");
   
-  if (starIdMatch || isSearchIntent || lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account") || lower.includes("check starid") || lower.includes("find starid")) {
+  if (starIdMatch || isSearchIntent || isDeepSearch || lower.includes("check ad") || lower.includes("is locked") || lower.includes("active directory") || lower.includes("ad account") || lower.includes("check starid") || lower.includes("find starid")) {
     let query = "";
     
     if (starIdMatch) {
       query = starIdMatch[0];
     } else {
-      const markers = ["for", "find", "who is", "lookup", "search", "check ad", "is locked", "active directory", "ad account", "check starid", "find starid"];
+      const markers = ["deep search", "scrape", "portal search", "for", "find", "who is", "lookup", "search", "check ad", "is locked", "active directory", "ad account", "check starid", "find starid"];
       let bestMarkerIndex = -1;
       for (const marker of markers) {
         const idx = lower.indexOf(marker);
@@ -375,10 +439,18 @@ async function checkEnterpriseTools(text) {
     
     if (query.length < 2) return false;
     
-    appendMessage(`🤖 Searching AD/StarID for: **${query}**...`, 'ai');
+    if (isDeepSearch && query.length === 8) {
+      scrapePortal(query);
+      return true;
+    }
+
+    appendMessage(`🐴 Searching AD/StarID for: **${query}**...`, 'ai');
     
     try {
-      const res = await fetch(`/api/ad/${encodeURIComponent(query)}`);
+      const adController = new AbortController();
+      const adTimeout = setTimeout(() => adController.abort(), 10000);
+      const res = await fetch(`/api/ad/${encodeURIComponent(query)}`, { signal: adController.signal });
+      clearTimeout(adTimeout);
       const data = await res.json();
       
       if (data.status === "success" && data.data) {
@@ -391,6 +463,9 @@ async function checkEnterpriseTools(text) {
           html += `• **Title:** ${user.Title || 'N/A'}<br>`;
           html += `• **Dept:** ${user.Department || 'N/A'}<br>`;
           html += `• **Locked:** ${user.IsLocked ? '<span style="color:#ef4444;font-weight:bold;">⚠️ YES</span>' : '<span style="color:#22c55e;font-weight:bold;">✅ NO</span>'}<br>`;
+          if ((!user.Title || user.Title === 'N/A') && user.StarID) {
+            html += `<button class="btn-small" onclick="scrapePortal('${user.StarID}')" style="margin-top:8px; font-size:10px; padding: 4px 8px; background:var(--primary); color:white; border:none; border-radius:4px; cursor:pointer;">🔍 Deep Search Portal (Full Details)</button><br>`;
+          }
           html += `</div>`;
         });
         
@@ -399,7 +474,7 @@ async function checkEnterpriseTools(text) {
         appendMessage(`Search Failed: ${data.message}`, 'ai');
       }
     } catch (e) {
-      appendMessage(`Error connecting to Enterprise API. Is the Python backend running?`, 'ai');
+      appendMessage(`⚠️ AD lookup timed out or failed. The network may be slow. Try again in a moment, or use the **AD Management** tab directly.`, 'ai');
     }
     return true;
   }
@@ -408,17 +483,28 @@ async function checkEnterpriseTools(text) {
   if (lower.includes("check sccm") || lower.includes("find computer")) {
     const words = lower.split(" ");
     const device = words[words.length - 1];
-    appendMessage(`🤖 Querying SCCM Database for device: **${device}**...`, 'ai');
+    appendMessage(`🐴 Querying SCCM Database for device: **${device}**...`, 'ai');
     try {
       const res = await fetch(`/api/sccm/${device}`);
       const data = await res.json();
       if (data.status === "success" && data.data) {
-        let html = `**SCCM Device Found:**<br>`;
+        let html = `<div class="sccm-card">`;
+        html += `<div style="font-weight:700; color:var(--accent); margin-bottom:10px;">💻 SCCM Device Found</div>`;
         html += `• **Name:** ${data.data.Name}<br>`;
+        html += `• **Resource ID:** ${data.data.ResourceID || 'N/A'}<br>`;
         html += `• **Last Logon:** ${data.data.LastLogonUserName || 'Unknown'}<br>`;
         html += `• **IP Addresses:** ${(data.data.IPAddresses || []).join(', ')}<br>`;
-        html += `• **MAC Addresses:** ${(data.data.MACAddresses || []).join(', ')}<br>`;
         html += `• **OS:** ${data.data.OperatingSystemNameandVersion || 'Unknown'}<br>`;
+        
+        if (currentUser && currentUser.role !== 'helpdesk' && data.data.ResourceID) {
+            html += `<div class="remote-actions-bar" style="margin-top:15px; display:flex; flex-wrap:wrap; gap:8px;">`;
+            html += `<button class="btn-small" onclick="triggerRemoteAction('${data.data.ResourceID}', 'sync_policy', this)">🔄 Sync Policy</button>`;
+            html += `<button class="btn-small" onclick="triggerRemoteAction('${data.data.ResourceID}', 'scan_updates', this)">🔍 Scan Updates</button>`;
+            html += `<button class="btn-small" onclick="triggerRemoteAction('${data.data.ResourceID}', 'eval_updates', this)">📊 Eval Updates</button>`;
+            html += `<button class="btn-small btn-danger" onclick="triggerRemoteAction('${data.data.ResourceID}', 'restart', this)">🔌 Restart</button>`;
+            html += `</div>`;
+        }
+        html += `</div>`;
         appendMessage(html, 'ai');
       } else {
         appendMessage(`SCCM Query Failed: ${data.message}`, 'ai');
@@ -431,7 +517,7 @@ async function checkEnterpriseTools(text) {
   if (lower.includes("check mist") || lower.includes("wifi status")) {
     const words = lower.split(" ");
     const mac = words[words.length - 1];
-    appendMessage(`🤖 Querying Juniper Mist for client: **${mac}**...`, 'ai');
+    appendMessage(`🐴 Querying Juniper Mist for client: **${mac}**...`, 'ai');
     try {
       const res = await fetch(`/api/mist/${mac}`);
       const data = await res.json();
@@ -452,7 +538,94 @@ async function checkEnterpriseTools(text) {
     return true;
   }
 
+  // Portal Scraper Intent (Manual)
+  if (lower.includes("scrape starid") || lower.includes("portal search")) {
+    const starid = text.split(' ').pop().toLowerCase();
+    if (starid && starid.length === 8) {
+       scrapePortal(starid);
+       return true;
+    }
+  }
+
   return false;
+}
+
+/**
+ * Headless Web Scraper for MinnState StarID Admin Portal
+ * @param {string} starid 
+ */
+async function triggerRemoteAction(resourceId, actionType, btn) {
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = "⏳ Sending...";
+    
+    try {
+        const res = await fetch('/api/remote/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resource_id: resourceId, action_type: actionType })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            showToast(`Action ${actionType} triggered!`, 'success');
+            btn.innerHTML = "✅ Sent";
+            btn.style.background = "var(--green)";
+        } else {
+            showToast(data.message, 'error');
+            btn.innerHTML = "❌ Failed";
+            btn.style.background = "var(--red)";
+        }
+    } catch (e) {
+        showToast("Error connecting to server", 'error');
+        btn.innerHTML = "❌ Error";
+    }
+    
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        btn.style.background = "";
+    }, 3000);
+}
+
+async function scrapePortal(starid) {
+  appendMessage(`🐎 Logging into StarID Admin to fetch details for **${starid}**...<br><span style="font-size:11px; opacity:0.8;">(This takes ~15 seconds using headless browser)</span>`, 'ai');
+  try {
+    const res = await fetch(`/api/scrape/starid/${starid}`);
+    const data = await res.json();
+    if (data.status === 'success') {
+      const u = data.data[0];
+      let html = `<div class="deep-search-card">`;
+      html += `<div class="card-header">🏇 Mustang Portal Deep Search</div>`;
+      html += `<div class="card-body">`;
+      html += `<div class="user-main">`;
+      html += `<div class="user-name">${u.Name}</div>`;
+      html += `<div class="user-starid">${u.StarID}</div>`;
+      html += `</div>`;
+      
+      html += `<div class="detail-grid">`;
+      html += `<div class="detail-item"><span class="label">Email:</span> <span class="val">${u.Email}</span></div>`;
+      html += `<div class="detail-item"><span class="label">Status:</span> <span class="val status-${u.ActivationStatus.toLowerCase()}">${u.ActivationStatus}</span></div>`;
+      html += `<div class="detail-item"><span class="label">Password Expires:</span> <span class="val">${u.PasswordExpires}</span></div>`;
+      html += `<div class="detail-item"><span class="label">TechID:</span> <span class="val">${u.TechID}</span></div>`;
+      html += `<div class="detail-item"><span class="label">Library Barcode:</span> <span class="val">${u.LibraryBarcode}</span></div>`;
+      if (u.Title !== "N/A") html += `<div class="detail-item"><span class="label">Title:</span> <span class="val">${u.Title}</span></div>`;
+      if (u.Department !== "N/A") html += `<div class="detail-item"><span class="label">Dept:</span> <span class="val">${u.Department}</span></div>`;
+      html += `</div>`;
+      
+      html += `<div class="affiliation-box">`;
+      html += `<div class="label">Affiliations:</div>`;
+      html += `<div class="val">${u.Affiliations}</div>`;
+      html += `</div>`;
+      
+      html += `<div class="card-footer">Verified via MinnState StarID Admin Portal • ${new Date().toLocaleTimeString()}</div>`;
+      html += `</div></div>`;
+      appendMessage(html, 'ai');
+    } else {
+      appendMessage(`❌ **Portal Search Failed**<br>${data.message}`, 'ai');
+    }
+  } catch (e) {
+    appendMessage(`❌ **Connection Error**<br>Could not reach the scraping engine.`, 'ai');
+  }
 }
 
 function getKeywordPrediction(text) {
@@ -520,6 +693,7 @@ function getKeywordPrediction(text) {
   
   let bestMatch = null;
   let maxScore = 0;
+  const learnedKeywords = JSON.parse(localStorage.getItem('trc_learned_keywords')) || {};
   
   for (const faq of FAQ_DATA) {
     let score = 0;
@@ -541,30 +715,39 @@ function getKeywordPrediction(text) {
   return maxScore > 0 ? bestMatch : null;
 }
 
-  return null;
-}
+let chatHistory = [];
 
 async function streamAIResponse(query, typingId) {
   const container = document.getElementById('chatMessages');
   
-  // Create the streaming message bubble
+  // IMMEDIATELY show a message — never leave user staring at dots
+  removeTyping(typingId);
+  
   const msgDiv = document.createElement('div');
   msgDiv.className = 'msg ai';
   msgDiv.innerHTML = `
-    <div class="msg-avatar">🤖</div>
-    <div class="msg-bubble" id="streaming-${typingId}"></div>
+    <div class="msg-avatar">🐴</div>
+    <div class="msg-bubble" id="streaming-${typingId}" style="opacity:0.7; font-style:italic;">Let me think about that...</div>
   `;
-  
-  removeTyping(typingId);
   container.appendChild(msgDiv);
+  container.scrollTop = container.scrollHeight;
   const bubble = document.getElementById(`streaming-${typingId}`);
   
   try {
+    const payload = { prompt: query, history: chatHistory };
+    const controller = new AbortController();
+    const streamTimeout = setTimeout(() => controller.abort(), 20000);
+
     const response = await fetch('/api/ai/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: query })
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
+    
+    // As soon as first byte arrives, switch to normal style
+    bubble.style.opacity = '1';
+    bubble.style.fontStyle = 'normal';
     
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -579,6 +762,11 @@ async function streamAIResponse(query, typingId) {
       bubble.innerHTML = text.replace(/\n/g, '<br>');
       container.scrollTop = container.scrollHeight;
     }
+    clearTimeout(streamTimeout);
+    
+    if (!text.trim()) {
+      bubble.innerHTML = "I didn't get a response. Could you rephrase your question? For example:<br>• What specific issue are you seeing?<br>• Which device or service is affected?";
+    }
     
     // Check if the AI response suggests a specific category we know about
     const lowerText = text.toLowerCase();
@@ -587,8 +775,21 @@ async function streamAIResponse(query, typingId) {
         bubble.innerHTML += `<br><br><button class="ai-cmd-btn" onclick="renderFaqResponse(${JSON.stringify(match).replace(/"/g, '&quot;')})">📖 View Official Procedure: ${match.service}</button>`;
     }
     
+    // Add AI response to history
+    chatHistory.push({ role: 'assistant', content: text });
+    if (chatHistory.length > 8) chatHistory.shift();
+    
   } catch (err) {
-    bubble.innerText = "Connection lost. Please check if the TRC server and Ollama are running.";
+    // NEVER get stuck — always give a helpful response
+    bubble.style.opacity = '1';
+    bubble.style.fontStyle = 'normal';
+    bubble.innerHTML = `I'm having trouble connecting to the AI engine right now, but I can still help!<br><br>
+      <strong>💡 Try one of these:</strong><br>
+      • "Student can't log in" → I'll find the right procedure<br>
+      • "How do I get to CH104" → Instant directions<br>
+      • "Check AD for ab1234cd" → Account lookup<br><br>
+      <button class="ai-cmd-btn" onclick="switchView('faq')">📚 Browse All Procedures</button>
+      <button class="ai-cmd-btn" onclick="switchView('wayfinding')">🗺️ Campus Maps</button>`;
   }
 }
 
@@ -598,7 +799,7 @@ async function getAIPrediction(text) {
   const prompt = `You are a Help Desk Assistant. Map the following user issue to the most appropriate service category from this list: [${categoriesList}]. Issue: "${text}". ONLY output the exact name of the category from the list, nothing else.`;
   
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+  const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s max — don't block the user
 
   try {
     const response = await fetch('/api/ai/generate', {
@@ -630,7 +831,7 @@ function appendMessage(text, sender) {
   
   const avatar = document.createElement('div');
   avatar.className = 'msg-avatar';
-  avatar.innerText = sender === 'user' ? '👤' : '🤖';
+  avatar.innerText = sender === 'user' ? '🤠' : '🐴';
   
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble';
@@ -649,7 +850,7 @@ function appendTyping(id) {
   msgDiv.id = id;
   
   msgDiv.innerHTML = `
-    <div class="msg-avatar">🤖</div>
+    <div class="msg-avatar">🐴</div>
     <div class="msg-bubble typing">
       <span></span><span></span><span></span>
     </div>
@@ -678,7 +879,7 @@ function renderFaqResponse(faq) {
   html += `<div class="field-row"><span class="field-label">Responsible:</span><span class="field-val">${faq.form.RespGroup}</span></div>`;
   
   if (faq.escalate) {
-    html += `<div class="escalate"><strong>👤 Escalate to:</strong> ${faq.escalate}</div>`;
+    html += `<div class="escalate"><strong>🤠 Escalate to:</strong> ${faq.escalate}</div>`;
   }
   
   // Add Troubleshooting Web Links
@@ -790,7 +991,7 @@ function openModal(faq) {
         
         ${faq.escalate ? `
         <div class="faq-section">
-          <h3>👤 Escalation Path</h3>
+          <h3>🤠 Escalation Path</h3>
           <div style="background: rgba(245,158,11,0.1); border-left: 3px solid #f59e0b; padding: 10px 14px; font-size: 13px;">
             ${faq.escalate}
           </div>
@@ -877,7 +1078,7 @@ function renderTicketList(tickets) {
       </div>
       <div class="ticket-card-title">${ticket.title}</div>
       <div class="ticket-card-meta">
-        <span>👤 ${ticket.requestor}</span>
+        <span>🤠 ${ticket.requestor}</span>
         <span class="${priorityClass}">🚩 ${ticket.priority}</span>
       </div>
     `;
@@ -911,7 +1112,7 @@ async function showTicketDetail(id) {
     </div>
     
     <div id="aiBriefingContainer" class="briefing-card">
-      <div class="placeholder-icon" style="font-size:24px; animation: bounce 1s infinite;">🤖</div>
+      <div class="placeholder-icon" style="font-size:24px; animation: bounce 1s infinite;">🐴</div>
       <p style="text-align:center; font-size:12px; color:var(--text2);">AI is analyzing ticket and matching Knowledge Base...</p>
     </div>
     
@@ -1067,12 +1268,21 @@ async function getDirections(target, start = userCurrentLocation) {
   const typingId = 'typing-dir-' + Date.now();
   appendTyping(typingId);
   
+  // Add to chat history so corrections work
+  chatHistory.push({ role: 'assistant', content: `Calculating directions from ${start} to ${target}` });
+  if (chatHistory.length > 8) chatHistory.shift();
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  
   try {
     const res = await fetch('/api/ai/directions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target, start })
+      body: JSON.stringify({ target, start }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     const data = await res.json();
     removeTyping(typingId);
     
@@ -1344,17 +1554,21 @@ async function executeAICommand() {
   showToast("AI Orchestrating...", "info");
   
   try {
+    // Add user message to history
+    chatHistory.push({ role: 'user', content: query });
+    if (chatHistory.length > 6) chatHistory.shift();
+
     const res = await fetch('/api/ai/orchestrate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query })
+      body: JSON.stringify({ query, history: chatHistory })
     });
     const data = await res.json();
     
     input.value = '';
     
     if (data.ai_suggestion) {
-      appendMessage(`🤖 **AI Suggestion:** ${data.ai_suggestion}`, 'ai');
+      appendMessage(`🐴 **AI Suggestion:** ${data.ai_suggestion}`, 'ai');
     }
 
     if (data.intent === 'sccm_lookup') {
@@ -1369,6 +1583,9 @@ async function executeAICommand() {
       switchView('faq');
       document.getElementById('faqSearchInput').value = data.params.query;
       searchFAQ();
+    } else if (data.intent === 'portal_scrape') {
+      switchView('chat');
+      scrapePortal(data.params.query);
     } else if (data.intent === 'map_lookup') {
       switchView('wayfinding');
       document.getElementById('mapSearchInput').value = data.params.query;
@@ -1629,7 +1846,7 @@ async function adminAddUser() {
     });
     document.getElementById('newUserId').value = '';
     loadAdminUsers();
-    appendMessage(`👤 User **${username}** assigned to role **${role.toUpperCase()}** with custom modules.`, 'ai');
+    appendMessage(`🤠 User **${username}** assigned to role **${role.toUpperCase()}** with custom modules.`, 'ai');
   } catch (e) { alert("Failed to update user"); }
 }
 
