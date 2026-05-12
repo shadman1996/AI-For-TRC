@@ -1070,7 +1070,19 @@ def enrich_ai_prompt(prompt: str) -> str:
 def ai_proxy_generate(data: dict):
     prompt = data.get("prompt", "")
     enriched = enrich_ai_prompt(prompt)
-    response = AIAdapter.generate(enriched)
+    
+    system_instructions = (
+        "You are the TRC AI Assistant at Southwest Minnesota State University (SMSU). "
+        "You are a warm, witty, incredibly friendly, and conversational AI companion first! "
+        "Your first goal is to keep users engaged and entertained. You love light gossip, casual jokes, general questions, life/academic advice, "
+        "and suggesting movies/music/foods. Be fun, relatable, and human-like! Feel free to use friendly horse/mustang emojis (🐴) occasionally since "
+        "the SMSU mascot is the Mustang! "
+        "HOWEVER, you are also secretly a highly trained IT SysAdmin. If the user asks for campus tech help (e.g., passwords, locking, device searches, "
+        "rooms, IPs, or ethernet ports), seamlessly and professionally help them using the background facts provided. "
+        "Never refuse a general or fun conversation, and never say you are 'just a help desk bot'. Be a normal, fun AI first, and a tech helper second!"
+    )
+    full_prompt = f"{system_instructions}\n\nUser: {enriched}\nAssistant:"
+    response = AIAdapter.generate(full_prompt)
     return {"status": "success", "response": response}
 
 @app.post("/api/ai/stream")
@@ -1085,15 +1097,27 @@ async def ai_proxy_stream(data: dict):
     # Enrich prompt with real-time facts (IPs, subnets, rooms, ports, devices)
     enriched = enrich_ai_prompt(prompt)
 
+    system_instructions = (
+        "You are the TRC AI Assistant at Southwest Minnesota State University (SMSU). "
+        "You are a warm, witty, incredibly friendly, and conversational AI companion first! "
+        "Your first goal is to keep users engaged and entertained. You love light gossip, casual jokes, general questions, life/academic advice, "
+        "and suggesting movies/music/foods. Be fun, relatable, and human-like! Feel free to use friendly horse/mustang emojis (🐴) occasionally since "
+        "the SMSU mascot is the Mustang! "
+        "HOWEVER, you are also secretly a highly trained IT SysAdmin. If the user asks for campus tech help (e.g., passwords, locking, device searches, "
+        "rooms, IPs, or ethernet ports), seamlessly and professionally help them using the background facts provided. "
+        "Never refuse a general or fun conversation, and never say you are 'just a help desk bot'. Be a normal, fun AI first, and a tech helper second!"
+    )
+
     # Format history into the prompt for context
     context_str = ""
     if history:
-        for msg in history[-4:]: # Keep last 4 messages to save context window
+        for msg in history[-5:]: # Keep last 5 messages for robust context
             role = "User" if msg.get("role") == "user" else "Assistant"
             context_str += f"{role}: {msg.get('content')}\n"
-        full_prompt = f"Below is a conversation between a User and a TRC Help Desk Assistant.\n\n{context_str}User: {enriched}\nAssistant:"
+        full_prompt = f"{system_instructions}\n\n[CONVERSATION HISTORY]\n{context_str}User: {enriched}\nAssistant:"
     else:
-        full_prompt = enriched
+        full_prompt = f"{system_instructions}\n\nUser: {enriched}\nAssistant:"
+
 
 
     def generate():
