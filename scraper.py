@@ -96,6 +96,7 @@ def scrape_starid_admin(query: str, username: str, password: str):
                 # 5. Role Placement
                 "Title": details.get("Title", "N/A"),
                 "Department": details.get("Department", "N/A"),
+                "Room": details.get("Office", details.get("Room Number", details.get("Room", "N/A"))),
                 
                 # 6. Academic Affiliation Lists
                 "Affiliations": details.get("ISRS Affiliation List", "N/A"),

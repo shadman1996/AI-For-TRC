@@ -2370,6 +2370,9 @@ async function fetchPortalDetails(starId) {
         <div class="prof-data-item"><strong>TechID List:</strong> <span style="color:var(--accent2); font-weight:600;">${u.TechID || 'N/A'}</span></div>
         <div class="prof-data-item"><strong>Library Barcodes:</strong> <span>${u.LibraryBarcode || 'N/A'}</span></div>
         <div class="prof-data-item"><strong>State Employee Number:</strong> <span>${u.StateEmployeeNumber || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Designation:</strong> <span>${u.Title || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Department:</strong> <span>${u.Department || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Room Number:</strong> <span style="font-weight:600; color:var(--accent2);">🚪 ${u.Room || 'N/A'}</span></div>
         
         <div style="font-size:11.5px; color:var(--text2); margin-top:12px; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px; line-height:1.45;">
           <strong>ISRS Affiliation List:</strong><br>
