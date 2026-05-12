@@ -1402,7 +1402,15 @@ async function showTicketDetail(id) {
   const detailEl = document.getElementById('ticketDetail');
   detailEl.innerHTML = `
     <div class="detail-header">
-      <div class="detail-title">${ticket.title}</div>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div class="detail-title">${ticket.title}</div>
+        <a href="https://services.mnscu.edu/TDNext/Apps/351/Tickets/TicketDet.aspx?TicketID=${ticket.id}" 
+           target="_blank" 
+           class="btn-handoff" 
+           style="background: var(--accent); color: #fff; text-decoration: none; padding: 6px 12px; font-size: 11px; border-radius: 6px; display: flex; align-items: center; gap: 6px;">
+           🌐 View in TeamDynamix
+        </a>
+      </div>
       <div class="detail-meta">
         <span><strong>ID:</strong> #${ticket.id}</span>
         <span><strong>Requestor:</strong> ${ticket.requestor}</span>

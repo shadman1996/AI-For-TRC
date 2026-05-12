@@ -831,44 +831,154 @@ def learn_kb(payload: LearnPayload, user=Depends(get_session_user)):
 # TeamDynamix (TDX) Integration
 MOCK_TICKETS = [
     {
-        "id": "123456",
-        "title": "Printer Jam - Library 2nd Floor",
+        "id": "908910",
+        "title": "D2L account",
         "status": "In Process",
         "priority": "Medium",
-        "requestor": "John Smith",
-        "created": "2026-05-10T14:30:00",
-        "description": "The big Marco printer in the library (2nd floor) is showing a 'Paper Jam in Tray 2' error. I've tried clearing the tray but the error persists. Class starts in 20 minutes and I need to print 50 handouts.",
-        "service": "Printing Support"
+        "requestor": "StarID: vg6340ah",
+        "created": "2026-05-12T13:22:00",
+        "description": "User reporting issues accessing D2L Brightspace. Needs account verification and potentially a sync with the enrollment database.",
+        "service": "Learning Management System"
     },
     {
-        "id": "123457",
-        "title": "Account Locked - Faculty StarID",
+        "id": "908882",
+        "title": "Office move to ST 219 - ISRS Access Lost",
         "status": "New",
         "priority": "High",
-        "requestor": "Dr. Jane Miller",
-        "created": "2026-05-11T08:15:00",
-        "description": "I'm unable to log into my office computer or D2L. It says my account is locked. I might have entered my password wrong too many times after the recent update.",
-        "service": "Disabled/Locked Account Request"
+        "requestor": "Staff Member",
+        "created": "2026-05-12T12:59:00",
+        "description": "My office was moved out of the BA building today to ST 219. I do not have access to ISRS now. Network port may need activation or VLAN assignment.",
+        "service": "ISRS / Administrative Systems"
     },
     {
-        "id": "123458",
-        "title": "New Laptop Setup - HR",
+        "id": "859502",
+        "title": "Computer replacement - Shelby Flint",
+        "status": "In Process",
+        "priority": "Medium",
+        "requestor": "Shelby Flint",
+        "created": "2026-05-12T12:57:00",
+        "description": "Standard computer cycle replacement. Data migration needed from old Dell unit to new Latitude 5440.",
+        "service": "Computer Cycle / Hardware"
+    },
+    {
+        "id": "902246",
+        "title": "BA AC Maintenance Moves",
+        "status": "In Process",
+        "priority": "Medium",
+        "requestor": "Facilities",
+        "created": "2026-05-12T12:53:00",
+        "description": "Temporary equipment moves required due to AC maintenance in Bellows Academic building. Disconnecting and reconnecting workstations.",
+        "service": "Hardware Relocation"
+    },
+    {
+        "id": "888052",
+        "title": "Device deployment - Taylor Mckittrick",
         "status": "In Process",
         "priority": "Low",
-        "requestor": "Sarah Wilson",
-        "created": "2026-05-09T10:00:00",
-        "description": "Setting up a new Dell Latitude for the new HR assistant starting next Monday. Need standard office software and access to the 'HR-Sensitive' shared drive.",
+        "requestor": "Taylor Mckittrick",
+        "created": "2026-05-12T12:39:00",
+        "description": "Deploying new department-assigned peripheral or workstation. Setup and software installation required.",
         "service": "Employee Onboarding"
     },
     {
-        "id": "123459",
-        "title": "WiFi dropping in Student Center",
-        "status": "New",
+        "id": "903081",
+        "title": "My school email",
+        "status": "In Process",
         "priority": "Medium",
-        "requestor": "Student Guest",
-        "created": "2026-05-11T09:45:00",
-        "description": "Several students in the upper level of the Student Center are reporting that the 'SMSU-Public' WiFi keeps disconnecting every few minutes. My MAC is 00:0a:95:9d:68:16.",
-        "service": "Campus Network"
+        "requestor": "Student",
+        "created": "2026-05-12T12:13:00",
+        "description": "Troubleshooting login issues for O365/Exchange email. Check MFA status and license assignment.",
+        "service": "Email / Office 365"
+    },
+    {
+        "id": "899264",
+        "title": "Computer deployment - Grayson Benedict",
+        "status": "In Process",
+        "priority": "Medium",
+        "requestor": "Grayson Benedict",
+        "created": "2026-05-12T12:09:00",
+        "description": "New hire computer deployment. Imaging via SCCM and standard software profile setup.",
+        "service": "Employee Onboarding"
+    },
+    {
+        "id": "908664",
+        "title": "Troubleshoot IT issues - Afternoon availability",
+        "status": "In Process",
+        "priority": "Medium",
+        "requestor": "Faculty",
+        "created": "2026-05-12T12:07:00",
+        "description": "User is available this afternoon to troubleshoot ongoing IT issues. Coordinate time for office visit.",
+        "service": "General Support"
+    },
+    {
+        "id": "901087",
+        "title": "Computer deployment - Melisa Nubile",
+        "status": "In Process",
+        "priority": "Medium",
+        "requestor": "Melisa Nubile",
+        "created": "2026-05-12T11:49:00",
+        "description": "Workstation deployment. User requested specific software (Adobe Suite) for their role.",
+        "service": "Software Installation"
+    },
+    {
+        "id": "907237",
+        "title": "Retirement Processing",
+        "status": "In Process",
+        "priority": "Low",
+        "requestor": "HR / Staff",
+        "created": "2026-05-12T11:16:00",
+        "description": "Account deactivation and equipment return for retiring staff member. Ensure data is archived if necessary.",
+        "service": "Offboarding"
+    },
+    {
+        "id": "787836",
+        "title": "Windows 25h2 updates",
+        "status": "In Process",
+        "priority": "Low",
+        "requestor": "System",
+        "created": "2026-05-11T12:14:00",
+        "description": "Monitoring deployment of Windows 11 25H2 updates across campus labs. Checking for failed installs.",
+        "service": "SCCM / Updates"
+    },
+    {
+        "id": "757375",
+        "title": "iPad audit",
+        "status": "In Process",
+        "priority": "Medium",
+        "requestor": "Department Head",
+        "created": "2026-05-11T08:54:00",
+        "description": "Physical audit of department iPads. Checking Serial Numbers against inventory database.",
+        "service": "Inventory / Audit"
+    },
+    {
+        "id": "887563",
+        "title": "Windows machines not onboarded to MDE",
+        "status": "In Process",
+        "priority": "High",
+        "requestor": "Security Team",
+        "created": "2026-05-11T00:02:00",
+        "description": "Identifying and onboarding Windows machines missing from Microsoft Defender for Endpoint (MDE).",
+        "service": "Security / Endpoint"
+    },
+    {
+        "id": "835372",
+        "title": "Bitlocker not enabled",
+        "status": "In Process",
+        "priority": "High",
+        "requestor": "Security Team",
+        "created": "2026-05-07T11:16:00",
+        "description": "Found multiple machines without active Bitlocker encryption. Policy remediation required via SCCM.",
+        "service": "Security / Encryption"
+    },
+    {
+        "id": "859654",
+        "title": "Computer Cycle - Inventory Update",
+        "status": "In Process",
+        "priority": "Medium",
+        "requestor": "TRC Tech",
+        "created": "2026-05-05T14:29:00",
+        "description": "Ongoing computer cycle management. Updating asset tags and lifecycle statuses in TDX.",
+        "service": "Computer Cycle / Hardware"
     }
 ]
 
