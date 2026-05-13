@@ -4,12 +4,21 @@ let currentView = 'chat';
 let userCurrentLocation = "the Technology Resource Center (TRC) in Bellows Academic (BA)";
 
 // ----- THEME & AVATAR MANAGEMENT -----
-function setTheme(theme) {
-  document.body.className = `theme-${theme}`;
-  localStorage.setItem('trc_theme', theme);
+function applyAppearanceClasses() {
+  const theme = localStorage.getItem('trc_theme') || 'default';
+  const font = localStorage.getItem('trc_font') || 'inter';
+  const glass = localStorage.getItem('trc_glass') || 'medium';
+  const bubble = localStorage.getItem('trc_bubble') || 'rounded';
   
-  // Update UI state in settings view (filtering out avatar options)
-  document.querySelectorAll('.theme-option:not(.avatar-option)').forEach(opt => {
+  document.body.className = `theme-${theme} font-${font} glass-${glass} bubble-${bubble}`;
+}
+
+function setTheme(theme) {
+  localStorage.setItem('trc_theme', theme);
+  applyAppearanceClasses();
+  
+  // Update UI state in settings view (filtering out other configurations)
+  document.querySelectorAll('.theme-grid .theme-option:not(.avatar-option):not(.font-option):not(.glass-option):not(.bubble-option)').forEach(opt => {
     opt.classList.remove('active');
     if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${theme}'`)) {
       opt.classList.add('active');
@@ -17,6 +26,48 @@ function setTheme(theme) {
   });
   
   showToast(`Theme updated to ${theme}`, 'success');
+}
+
+function setFont(font) {
+  localStorage.setItem('trc_font', font);
+  applyAppearanceClasses();
+  
+  document.querySelectorAll('.font-option').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${font}'`)) {
+      opt.classList.add('active');
+    }
+  });
+  
+  showToast(`Font style updated to ${font}`, 'success');
+}
+
+function setGlass(glass) {
+  localStorage.setItem('trc_glass', glass);
+  applyAppearanceClasses();
+  
+  document.querySelectorAll('.glass-option').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${glass}'`)) {
+      opt.classList.add('active');
+    }
+  });
+  
+  showToast("Glassmorphism intensity adjusted!", "success");
+}
+
+function setBubbleStyle(bubble) {
+  localStorage.setItem('trc_bubble', bubble);
+  applyAppearanceClasses();
+  
+  document.querySelectorAll('.bubble-option').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${bubble}'`)) {
+      opt.classList.add('active');
+    }
+  });
+  
+  showToast("Chat Bubble frame updated!", "success");
 }
 
 function setAvatar(avatarStr) {
@@ -35,17 +86,50 @@ function setAvatar(avatarStr) {
   showToast("Profile Avatar updated!", "success");
 }
 
-// Initialize theme and avatar
-const savedTheme = localStorage.getItem('trc_theme') || 'default';
-document.body.className = `theme-${savedTheme}`;
+// Initialize theme and appearance variables
+applyAppearanceClasses();
 
 const savedAvatar = localStorage.getItem('trc_avatar') || '🤠';
 document.addEventListener('DOMContentLoaded', () => {
   const headerAvatar = document.getElementById('headerUserAvatar');
   if (headerAvatar) headerAvatar.innerText = savedAvatar;
   
-  // Select active avatar in selector
+  // Select active states in selectors on startup
+  const savedTheme = localStorage.getItem('trc_theme') || 'default';
+  const savedFont = localStorage.getItem('trc_font') || 'inter';
+  const savedGlass = localStorage.getItem('trc_glass') || 'medium';
+  const savedBubble = localStorage.getItem('trc_bubble') || 'rounded';
+
+  document.querySelectorAll('.theme-grid .theme-option:not(.avatar-option):not(.font-option):not(.glass-option):not(.bubble-option)').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${savedTheme}'`)) {
+      opt.classList.add('active');
+    }
+  });
+  
+  document.querySelectorAll('.font-option').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${savedFont}'`)) {
+      opt.classList.add('active');
+    }
+  });
+  
+  document.querySelectorAll('.glass-option').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${savedGlass}'`)) {
+      opt.classList.add('active');
+    }
+  });
+  
+  document.querySelectorAll('.bubble-option').forEach(opt => {
+    opt.classList.remove('active');
+    if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${savedBubble}'`)) {
+      opt.classList.add('active');
+    }
+  });
+
   document.querySelectorAll('.avatar-option').forEach(opt => {
+    opt.classList.remove('active');
     if (opt.getAttribute('onclick') && opt.getAttribute('onclick').includes(`'${savedAvatar}'`)) {
       opt.classList.add('active');
     }
@@ -67,6 +151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initNotifications();
   if (USER_MODULES.length > 0) renderSidebar();
   fetchDeploymentInfo();
+  startHeartbeat();
 
   // File drag and drop upload
   const chatContainer = document.querySelector('.chat-container');
@@ -166,6 +251,10 @@ function switchView(viewId) {
   if (viewId === 'settings') {
     fetchDeploymentInfo();
   }
+  if (viewId === 'ad') {
+    fetchDeploymentInfo();
+    loadAuditLogs();
+  }
 }
 
 function renderSidebar() {
@@ -228,9 +317,8 @@ async function sendMessage() {
   
   appendMessage(text, 'user');
   inputEl.value = '';
-  
-  // Show typing indicator
   const typingId = 'typing-' + Date.now();
+  console.log("DEBUG: sendMessage triggered with text:", text);
   appendTyping(typingId);
   
   // --- FAST LOCAL INTENT DETECTION (runs FIRST, no AI call needed) ---
@@ -317,11 +405,7 @@ async function sendMessage() {
     return;
   }
   
-  if (qaState) {
-    handleQA(text);
-    removeTyping(typingId);
-    return;
-  }
+  console.log("DEBUG: Intent detection complete. Proceeding to AI Prediction...");
   
   let matchedFaq = await getAIPrediction(text);
   
@@ -432,6 +516,61 @@ function handleQA(text) {
   lastMatchedFaq = chosenFaq;
   renderFaqResponse(chosenFaq);
   qaState = null;
+}
+
+// ----- SYSTEM MAINTENANCE & DIAGNOSTICS -----
+function clearLocalCache() {
+  if (confirm("⚠️ Emergency Reset: This will clear all local settings, saved modules, and session data. You will be logged out. Continue?")) {
+    localStorage.clear();
+    sessionStorage.clear();
+    showToast("Cache cleared. Reloading...", "info");
+    setTimeout(() => location.reload(), 1500);
+  }
+}
+
+async function flushServerSessions() {
+  if (!confirm("⚠️ Are you sure? This will force-logout EVERYONE currently using the system.")) return;
+  
+  try {
+    const token = currentUser ? currentUser.token : '';
+    const res = await fetch(`/api/admin/clear-sessions?token=${token}`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast("All server sessions flushed!", "success");
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showToast(data.message || "Failed to flush sessions", "error");
+    }
+  } catch (e) {
+    showToast("Connection error", "error");
+  }
+}
+
+async function startHeartbeat() {
+  // Initial check
+  checkOllamaStatus();
+  
+  // Regular interval check
+  setInterval(async () => {
+    try {
+      // Use the config endpoint as a lightweight health check
+      const res = await fetch('/api/config');
+      if (res.ok) {
+        const data = await res.json();
+        const statusDot = document.getElementById('aiStatus');
+        const statusText = document.getElementById('aiStatusText');
+        if (statusDot && statusText) {
+          statusDot.className = 'status-dot online';
+          statusText.innerText = 'AI Ready (Network)';
+          isAIReady = true;
+        }
+      } else {
+        setFallbackStatus();
+      }
+    } catch (e) {
+      setFallbackStatus();
+    }
+  }, 30000); // Every 30 seconds
 }
 
 async function checkEnterpriseTools(text) {
@@ -1016,6 +1155,7 @@ function getKeywordPrediction(text) {
 let chatHistory = [];
 
 async function streamAIResponse(query, typingId) {
+  console.log("DEBUG: Entering streamAIResponse...");
   const container = document.getElementById('chatMessages');
   
   // IMMEDIATELY show a message — never leave user staring at dots
@@ -1038,7 +1178,7 @@ async function streamAIResponse(query, typingId) {
       token: currentUser ? currentUser.token : null
     };
     const controller = new AbortController();
-    const streamTimeout = setTimeout(() => controller.abort(), 20000);
+    const streamTimeout = setTimeout(() => controller.abort(), 60000);
 
     const response = await fetch('/api/ai/stream', {
       method: 'POST',
@@ -1404,7 +1544,7 @@ async function showTicketDetail(id) {
     <div class="detail-header">
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">
         <div class="detail-title">${ticket.title}</div>
-        <a href="https://services.mnscu.edu/TDNext/Apps/351/Tickets/TicketDet.aspx?TicketID=${ticket.id}" 
+        <a href="https://services.smsu.edu/TDNext/Apps/181/Tickets/TicketDet?TicketID=${ticket.id}" 
            target="_blank" 
            class="btn-handoff" 
            style="background: var(--accent); color: #fff; text-decoration: none; padding: 6px 12px; font-size: 11px; border-radius: 6px; display: flex; align-items: center; gap: 6px;">
@@ -2223,6 +2363,48 @@ async function deleteUser(username) {
   } catch (e) { alert("Failed to delete user"); }
 }
 
+async function adminSearchCampus() {
+  const query = document.getElementById('adminCampusSearchInput').value.trim();
+  if (!query) return;
+  const container = document.getElementById('adminCampusSearchResults');
+  container.innerHTML = `<div style="padding:20px; text-align:center; opacity:0.6;">🔍 Searching institutional records...</div>`;
+  
+  try {
+    const res = await fetch(`/api/admin/search-campus?q=${encodeURIComponent(query)}&token=${currentUser.token}`);
+    const data = await res.json();
+    
+    if (data.status === "success" && data.data) {
+      if (data.data.length === 0) {
+        container.innerHTML = `<div style="padding:20px; text-align:center; opacity:0.6;">❌ No users found in campus directory.</div>`;
+        return;
+      }
+      
+      let html = "";
+      data.data.forEach(user => {
+        html += `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding: 12px; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <div>
+              <div style="font-weight:600; color:var(--text);">${user.FullName || 'Unknown'}</div>
+              <div style="font-size:11px; opacity:0.6;">${user.StarID || 'No StarID'} — ${user.Title || 'No Title'}</div>
+            </div>
+            <button class="btn-small" onclick="selectUserForAdmin('${user.StarID}')" style="background:var(--accent2); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;">Select</button>
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    } else {
+      container.innerHTML = `<div style="padding:20px; text-align:center; color:var(--red);">Error: ${data.message}</div>`;
+    }
+  } catch (e) { container.innerHTML = "Error connecting to server."; }
+}
+
+function selectUserForAdmin(starid) {
+  if (!starid) return;
+  document.getElementById('newUserId').value = starid;
+  document.getElementById('newUserId').focus();
+  showToast(`Selected ${starid}. Assign a role below.`, 'info');
+}
+
 async function adminAddUser() {
   const username = document.getElementById('newUserId').value.trim();
   const role = document.getElementById('newUserRole').value;
@@ -2265,31 +2447,52 @@ async function showUnifiedProfile(starId, name) {
   }
 
   modal.innerHTML = `
-    <div class="modal-content" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column; background: var(--bg2); border: 1.5px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; padding: 20px; box-shadow: var(--shadow);">
-      <div class="unified-header" style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom:12px; margin-bottom:15px;">
-        <h2 style="margin:0; font-size:22px; font-weight:700; color:#fff; display:flex; align-items:center; gap:8px;">👤 Unified Profile <span style="opacity:0.5; font-weight:400; font-size:16px;">(${starId})</span></h2>
-        <button class="close-btn" onclick="closeUnifiedProfile()" style="background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer; transition:color 0.2s;">✕</button>
-      </div>
-      <div style="flex:1; overflow-y:auto; padding-right:5px; display:flex; flex-direction:column; gap:15px;">
-        <div id="prof-identity">
-          <div class="prof-loading">Loading general directory details...</div>
+    <div class="modal-content glass-card" style="width: 1200px; max-width: 98vw; height: 850px; max-height: 95vh; display: flex; flex-direction: column; border-radius: 20px; overflow: hidden; padding: 30px; position: relative; animation: modalFadeIn 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);">
+      <div class="unified-header" style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid var(--border); padding-bottom:20px; margin-bottom:20px;">
+        <div>
+          <h2 style="margin:0; font-size:26px; font-weight:800; background: linear-gradient(135deg, #fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display:flex; align-items:center; gap:12px;">
+            👤 Unified Profile 
+          </h2>
+          <div style="font-size:14px; color:var(--text2); margin-top:4px;">Institutional Metadata & Live Telemetry for <strong>${starId}</strong></div>
         </div>
-        <div class="profile-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 15px;">
-          <div class="profile-section" id="prof-portal" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto;">
-            <h3>🔍 StarID Portal Details</h3>
-            <div class="prof-loading">Fetching full details from MinnState...</div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          ${(currentUser.role === 'tech' || currentUser.role === 'sysadmin' || currentUser.role === 'wag') ? 
+            `<button class="btn-small" onclick="scrapePortal('${starId}')" style="background:var(--accent); color:white; border:none; padding:8px 15px; border-radius:8px; font-weight:600; cursor:pointer;">🏇 Deep Search</button>` : ''}
+          <button class="close-btn" onclick="closeUnifiedProfile()" style="background:var(--bg3); border:none; color:var(--text); width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all 0.2s;">✕</button>
+        </div>
+      </div>
+      <div style="flex:1; overflow-y:auto; padding-right:10px; display:flex; flex-direction:column; gap:20px;">
+        <div id="prof-identity">
+          <div class="ticket-placeholder" style="height:100px;"><div class="placeholder-icon rotating">⏳</div></div>
+        </div>
+        <div class="profile-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px;">
+          <div class="profile-section" id="prof-portal">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px;">
+              <span style="font-size:20px;">🔍</span>
+              <h3 style="margin:0; font-size:16px; color:var(--accent2);">StarID Portal Details</h3>
+            </div>
+            <div class="prof-loading">Fetching from MinnState StarID Admin...</div>
           </div>
-          <div class="profile-section" id="prof-sccm" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto;">
-            <h3>💻 SCCM Assets & Usage</h3>
-            <div class="prof-loading">Scanning SCCM database...</div>
+          <div class="profile-section" id="prof-sccm">
+             <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px;">
+              <span style="font-size:20px;">💻</span>
+              <h3 style="margin:0; font-size:16px; color:var(--accent2);">SCCM Assets & Usage</h3>
+            </div>
+            <div class="prof-loading">Scanning Workstation Inventory...</div>
           </div>
-          <div class="profile-section" id="prof-tdx" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto;">
-            <h3>🎫 Support History (TDX)</h3>
-            <div class="prof-loading">Querying ticket system...</div>
+          <div class="profile-section" id="prof-tdx">
+             <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px;">
+              <span style="font-size:20px;">🎫</span>
+              <h3 style="margin:0; font-size:16px; color:var(--accent2);">Support History (TDX)</h3>
+            </div>
+            <div class="prof-loading">Querying TeamDynamix...</div>
           </div>
-          <div class="profile-section" id="prof-mist" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 15px; max-height: 400px; overflow-y: auto;">
-            <h3>📶 WiFi Connectivity</h3>
-            <div class="prof-loading">Checking Mist telemetry...</div>
+          <div class="profile-section" id="prof-mist">
+             <div style="display:flex; align-items:center; gap:10px; margin-bottom:15px;">
+              <span style="font-size:20px;">📶</span>
+              <h3 style="margin:0; font-size:16px; color:var(--accent2);">WiFi Connectivity</h3>
+            </div>
+            <div class="prof-loading">Checking Juniper Mist Cloud...</div>
           </div>
         </div>
       </div>
@@ -2477,4 +2680,161 @@ async function fetchUserMist(search) {
       `;
     } else { container.innerHTML = `<h3>📶 WiFi Connectivity</h3><div class="prof-empty">No active WiFi session found</div>`; }
   } catch (e) {}
+}
+
+// ----- NEW AD & AUDIT LOG SERVICES -----
+async function loadAuditLogs() {
+  const container = document.getElementById('adminAuditLogBody');
+  if (!container) return;
+  if (!currentUser) return;
+  
+  try {
+    const res = await fetch(`/api/admin/audit-logs?token=${currentUser.token}`);
+    const data = await res.json();
+    if (data.status === 'success') {
+      let html = '';
+      if (data.data.length === 0) {
+        html = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text2);">No audit records found</td></tr>';
+      } else {
+        data.data.forEach(log => {
+          html += `
+            <tr>
+              <td style="padding:10px 15px; color:var(--text2); font-family:monospace; font-size:12px;">${log.timestamp}</td>
+              <td style="padding:10px 15px; font-weight:600; color:var(--accent2); font-size:12px;">${log.user}</td>
+              <td style="padding:10px 15px; font-weight:700; color:#fff; font-size:12px;">${log.action}</td>
+              <td style="padding:10px 15px; color:var(--green); font-weight:600; font-size:12px;">${log.target}</td>
+            </tr>
+          `;
+        });
+      }
+      container.innerHTML = html;
+    }
+  } catch (e) {
+    console.error("Failed to load audit logs", e);
+  }
+}
+
+let activeAdTargetStarID = '';
+
+async function adminAdLookup() {
+  const input = document.getElementById('adTargetStarID');
+  const adBox = document.getElementById('adDetailsBox');
+  if (!input || !adBox) return;
+  
+  const starid = input.value.trim();
+  if (!starid) {
+    showToast("Please enter a valid StarID to look up", "warning");
+    return;
+  }
+  
+  try {
+    const res = await fetch(`/api/ad/${starid}`);
+    const resData = await res.json();
+    if (resData.status === 'success' && resData.data.length > 0) {
+      const user = resData.data[0];
+      activeAdTargetStarID = user.StarID;
+      
+      document.getElementById('adDetailStarID').innerText = user.StarID;
+      
+      const statusBadge = document.getElementById('adDetailStatus');
+      if (user.IsLocked) {
+        statusBadge.innerText = 'LOCKED OUT';
+        statusBadge.className = 'status-badge offline';
+        statusBadge.style.background = 'rgba(239,68,68,0.15)';
+        statusBadge.style.color = 'var(--red)';
+      } else {
+        statusBadge.innerText = 'ACTIVE / RECOVERY';
+        statusBadge.className = 'status-badge online';
+        statusBadge.style.background = 'rgba(34,197,94,0.15)';
+        statusBadge.style.color = 'var(--green)';
+      }
+      
+      adBox.classList.remove('hidden');
+      showToast(`AD records found for ${user.StarID}`, "success");
+    } else {
+      adBox.classList.add('hidden');
+      showToast(`No AD records found matching: ${starid}`, "error");
+    }
+  } catch (e) {
+    adBox.classList.add('hidden');
+    showToast("Error querying Active Directory", "error");
+  }
+}
+
+async function adminAdUnlock() {
+  if (!activeAdTargetStarID) return;
+  try {
+    const res = await fetch(`/api/admin/ad/unlock?token=${currentUser.token}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ starid: activeAdTargetStarID })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast(data.message, "success");
+      loadAuditLogs();
+      adminAdLookup(); // Refresh status
+    } else {
+      showToast(data.message || "Failed to unlock account", "error");
+    }
+  } catch (e) {
+    showToast("Network error unlocking account", "error");
+  }
+}
+
+async function adminAdToggleStatus(enabled) {
+  if (!activeAdTargetStarID) return;
+  try {
+    const res = await fetch(`/api/admin/ad/toggle-status?token=${currentUser.token}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ starid: activeAdTargetStarID, enabled: enabled })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast(data.message, "success");
+      loadAuditLogs();
+      adminAdLookup(); // Refresh status
+    } else {
+      showToast(data.message || "Failed to update status", "error");
+    }
+  } catch (e) {
+    showToast("Network error updating status", "error");
+  }
+}
+
+async function adminAdResetPassword() {
+  if (!activeAdTargetStarID) return;
+  const pwInput = document.getElementById('adResetTempPw');
+  if (!pwInput) return;
+  
+  const tempPw = pwInput.value.trim();
+  if (!tempPw) {
+    showToast("Please enter a temporary password first", "warning");
+    return;
+  }
+  
+  try {
+    const res = await fetch(`/api/admin/ad/reset-password?token=${currentUser.token}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ starid: activeAdTargetStarID, temp_password: tempPw })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast(data.message, "success");
+      pwInput.value = ''; // Reset input
+      loadAuditLogs();
+    } else {
+      showToast(data.message || "Failed to reset password", "error");
+    }
+  } catch (e) {
+    showToast("Network error resetting password", "error");
+  }
 }

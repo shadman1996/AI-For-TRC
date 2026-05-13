@@ -4,8 +4,8 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>TRC AI Help Desk Assistant — SMSU</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="style.css?v=2.0"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="style.css?v=2.1"/>
 </head>
 <body>
 <!-- Login Overlay -->
@@ -309,6 +309,16 @@
         </div>
 
         <div class="settings-card">
+          <h3>🔍 Add User from Campus Directory</h3>
+          <p>Search for any staff member in the institutional records to grant them access.</p>
+          <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <input type="text" id="adminCampusSearchInput" placeholder="Name or StarID..." style="flex:1;" onkeydown="if(event.key==='Enter') adminSearchCampus()" />
+            <button class="btn-primary" onclick="adminSearchCampus()">Search</button>
+          </div>
+          <div id="adminCampusSearchResults" style="max-height: 300px; overflow-y: auto; border-radius: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1);"></div>
+        </div>
+
+        <div class="settings-card">
           <h3>User Role Management</h3>
           <p>Assign roles to StarIDs to control access levels.</p>
           <div class="admin-user-list" id="adminUserList">
@@ -330,6 +340,56 @@
             </div>
           </div>
         </div>
+
+        <!-- NEW ACTIVE DIRECTORY OPERATIONS CARD -->
+        <div class="settings-card">
+          <h3>⚡ Active Directory Account Actions</h3>
+          <p>Lookup and execute administrative operations on active SMSU accounts.</p>
+          <div style="display: flex; flex-direction: column; gap: 15px;">
+            <div style="display: flex; gap: 10px; width: 100%;">
+              <input type="text" id="adTargetStarID" placeholder="Enter target StarID (e.g. ab1234cd)..." style="flex:1;" onkeydown="if(event.key==='Enter') adminAdLookup()" />
+              <button class="btn-primary" onclick="adminAdLookup()" style="background: var(--accent);">Lookup Account</button>
+            </div>
+            
+            <div id="adDetailsBox" class="hidden" style="padding: 15px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px;">
+              <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                <span><strong>Target Account:</strong> <span id="adDetailStarID" style="color:var(--accent2); font-weight:700;">ab1234cd</span></span>
+                <span><strong>Lockout Status:</strong> <span id="adDetailStatus" class="status-badge" style="padding: 2px 8px; border-radius: 4px; font-weight:700;">Active</span></span>
+              </div>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn-small" onclick="adminAdUnlock()" style="background:var(--green); color:#fff; border:none; padding:6px 12px; border-radius:6px; cursor:pointer;">🔓 Unlock AD Account</button>
+                <button class="btn-small" onclick="adminAdToggleStatus(true)" style="background:rgba(34,197,94,0.1); border-color:var(--green); color:var(--green); padding:6px 12px; border-radius:6px; cursor:pointer; border: 1px solid var(--green);">Enable Account</button>
+                <button class="btn-small btn-danger" onclick="adminAdToggleStatus(false)" style="background:rgba(239,68,68,0.1); border-color:var(--red); color:var(--red); padding:6px 12px; border-radius:6px; cursor:pointer; border: 1px solid var(--red);">Disable Account</button>
+              </div>
+              
+              <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; display: flex; gap: 10px; align-items: center; width: 100%;">
+                <input type="text" id="adResetTempPw" placeholder="Temp password..." style="flex: 1; padding: 8px 12px; font-size: 13px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; color: white;" />
+                <button class="btn-small" onclick="adminAdResetPassword()" style="background:var(--accent); border:none; color:white; padding:8px 16px; border-radius:6px; cursor:pointer; font-weight:700;">Reset Password</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NEW AUDIT LOG TELEMETRY CARD -->
+        <div class="settings-card">
+          <h3>📋 Live Administrative Audit Logs</h3>
+          <p>Real-time feed of system administrative operations and security audit trails.</p>
+          <div style="background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border); overflow: hidden; margin-top: 15px; max-height: 250px; overflow-y: auto;">
+            <table class="form-fields-table" style="width: 100%; border-collapse: collapse;">
+              <thead style="position: sticky; top: 0; background: var(--bg2); z-index: 10;">
+                <tr>
+                  <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Timestamp</th>
+                  <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Operator</th>
+                  <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Action</th>
+                  <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Target</th>
+                </tr>
+              </thead>
+              <tbody id="adminAuditLogBody">
+                <!-- Populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -337,12 +397,13 @@
     <section class="view" id="view-settings">
       <div class="view-header">
         <h1>Appearance & Themes</h1>
-        <p>Personalize the TRC AI interface with custom color palettes.</p>
+        <p>Personalize the TRC AI interface with custom color palettes, font family styles, glassmorphic filters, and chat bubble frames.</p>
       </div>
-      <div class="settings-container">
+      <div class="settings-container" style="display: flex; flex-direction: column; gap: 24px;">
         <div class="settings-card">
           <h3>Select Theme</h3>
-          <div class="theme-grid">
+          <p style="margin-bottom: 15px; font-size: 13px; color: var(--text2);">Choose from a library of stunning, carefully-curated color schemes.</p>
+          <div class="theme-grid" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
             <div class="theme-option active" onclick="setTheme('default')" style="background: #0f1225;">
               <div class="theme-preview" style="background: linear-gradient(135deg, #6366f1, #a855f7);"></div>
               <span>Default Blue</span>
@@ -362,6 +423,85 @@
             <div class="theme-option" onclick="setTheme('gold')" style="background: #422006;">
               <div class="theme-preview" style="background: linear-gradient(135deg, #eab308, #ca8a04);"></div>
               <span>Sunset Gold</span>
+            </div>
+            <!-- NEW THEMES -->
+            <div class="theme-option" onclick="setTheme('cyberpunk')" style="background: #0c001a;">
+              <div class="theme-preview" style="background: linear-gradient(135deg, #ff007f, #00f0ff);"></div>
+              <span>Cyberpunk Neon</span>
+            </div>
+            <div class="theme-option" onclick="setTheme('nordic')" style="background: #0b0f19;">
+              <div class="theme-preview" style="background: linear-gradient(135deg, #38bdf8, #0ea5e9);"></div>
+              <span>Nordic Ice</span>
+            </div>
+            <div class="theme-option" onclick="setTheme('amethyst')" style="background: #120324;">
+              <div class="theme-preview" style="background: linear-gradient(135deg, #a855f7, #c084fc);"></div>
+              <span>Amethyst Glow</span>
+            </div>
+            <div class="theme-option" onclick="setTheme('dracula')" style="background: #1e1f29;">
+              <div class="theme-preview" style="background: linear-gradient(135deg, #ff79c6, #8be9fd);"></div>
+              <span>Dracula Classic</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- NEW APPEARANCE CARDS -->
+        <div class="settings-card">
+          <h3>Font Family Style</h3>
+          <p style="margin-bottom: 15px; font-size: 13px; color: var(--text2);">Pick a modern typography styling that fits your personal comfort.</p>
+          <div class="theme-grid" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
+            <div class="theme-option font-option active" onclick="setFont('inter')">
+              <div class="theme-preview" style="background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 16px; font-family: 'Inter', sans-serif;">Aa</div>
+              <span>Inter Sans</span>
+            </div>
+            <div class="theme-option font-option" onclick="setFont('outfit')">
+              <div class="theme-preview" style="background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 16px; font-family: 'Outfit', sans-serif;">Aa</div>
+              <span>Outfit Rounded</span>
+            </div>
+            <div class="theme-option font-option" onclick="setFont('roboto')">
+              <div class="theme-preview" style="background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 16px; font-family: 'Roboto Mono', monospace;">Aa</div>
+              <span>Roboto Mono</span>
+            </div>
+            <div class="theme-option font-option" onclick="setFont('serif')">
+              <div class="theme-preview" style="background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 16px; font-family: 'Playfair Display', serif;">Aa</div>
+              <span>Classic Serif</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>Glassmorphic Intensity</h3>
+          <p style="margin-bottom: 15px; font-size: 13px; color: var(--text2);">Adjust the premium blur and frosting opacity on interface containers.</p>
+          <div class="theme-grid" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
+            <div class="theme-option glass-option" onclick="setGlass('low')">
+              <div class="theme-preview" style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.02); height: 40px; border-radius: 8px;"></div>
+              <span>Sleek (Low)</span>
+            </div>
+            <div class="theme-option glass-option active" onclick="setGlass('medium')">
+              <div class="theme-preview" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); height: 40px; border-radius: 8px;"></div>
+              <span>Standard (Medium)</span>
+            </div>
+            <div class="theme-option glass-option" onclick="setGlass('high')">
+              <div class="theme-preview" style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); height: 40px; border-radius: 8px;"></div>
+              <span>Frosted (High)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <h3>Chat Bubble Framing</h3>
+          <p style="margin-bottom: 15px; font-size: 13px; color: var(--text2);">Toggle between bubble shapes to match your desired visual profile.</p>
+          <div class="theme-grid" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
+            <div class="theme-option bubble-option active" onclick="setBubbleStyle('rounded')">
+              <div class="theme-preview" style="background: var(--bg3); border-radius: 12px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 11px;">12px</div>
+              <span>Rounded Modern</span>
+            </div>
+            <div class="theme-option bubble-option" onclick="setBubbleStyle('soft')">
+              <div class="theme-preview" style="background: var(--bg3); border-radius: 24px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 11px;">24px</div>
+              <span>Cloud Soft</span>
+            </div>
+            <div class="theme-option bubble-option" onclick="setBubbleStyle('sharp')">
+              <div class="theme-preview" style="background: var(--bg3); border-radius: 4px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 11px;">4px</div>
+              <span>Minimalist Sharp</span>
             </div>
           </div>
         </div>
@@ -404,6 +544,15 @@
             </div>
           </div>
         </div>
+
+        <div class="settings-card" style="margin-top: 24px; border: 1px solid rgba(239, 68, 68, 0.2);">
+          <h3 style="color: var(--red);">⚠️ System Maintenance</h3>
+          <p style="margin-bottom: 15px; font-size: 13px; color: var(--text2);">Use these tools if the interface becomes unresponsive or "stuck".</p>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn-small btn-danger" onclick="clearLocalCache()" style="padding: 10px 20px;">Clear Local Cache & Reset</button>
+            <button class="btn-small" onclick="flushServerSessions()" style="padding: 10px 20px;">Flush Server Sessions (Admin Only)</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -412,7 +561,7 @@
 
 <div id="toastContainer" class="toast-container"></div>
 
-<script src="data.js?v=3.2.6"></script>
-<script src="app.js?v=3.2.6"></script>
+<script src="data.js?v=3.2.7"></script>
+<script src="app.js?v=3.2.7"></script>
 </body>
 </html>

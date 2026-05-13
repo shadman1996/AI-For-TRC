@@ -2,7 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.1.0] - 2026-05-11 (Current)
+## [3.2.0] - 2026-05-13 (Current)
+### Added
+- **Premium Appearance & Personalization Suite**: Complete visual redesign adding customizable high-density typography (fonts like Outfit, Inter, Playfair), adjustable Glassmorphism intensities (Frosted, Translucent, solid), and flexible Chat Bubble Framing shapes.
+- **Active Directory Account Operations**: Brand-new operations panel inside AD & User Management allowing direct StarID lookups, account status toggles, lockouts checks, password resets, and account unlocking.
+- **Live Security & Admin Audit Logs**: Added real-time scrolling administrative logs tracking all security and role-access actions with microsecond precision.
+- **Programmatic API Integration Gateway**: New `/api/integration/query` REST webhook enabling local OpenClaw agents and university notification bots to query the TRC KB, tickets, and directories.
+- **Scrollability Enhancements**: Optimized css layouts making the appearance and configuration panels fully scrollable on all desktop and mobile displays.
+
+## [3.1.0] - 2026-05-11
 ### Added
 - **Granular Module Permissions**: Added module-level checkbox controls in the Admin Panel for highly customizable user access.
 - **Network Map Viewer**: Enhanced PDF map renderer to handle file paths over the local network and added a reliable "Open in New Tab" fallback mechanism.

@@ -16,12 +16,15 @@ Detailed guides are available in the [docs/](docs/SYSTEM_GUIDE.md) directory:
 - **Remote Actions**: Trigger SCCM policy syncs and update scans directly from chat.
 - **Modular Permissions**: Granular role-based access for Help Desk, Tech, WAG, and SysAdmin staff.
 - **Knowledge Ingestion**: Drag-and-drop documentation into the AI's brain for instant learning.
+- **Premium Customization Suite**: Personalize appearance using curated themes (including Cyberpunk, Nordic, Amethyst, and Dracula), Font Typography (Inter, Outfit, Roboto Mono, Playfair), Glassmorphic Intensity levels, and Chat Bubble Framing.
+- **Integration API Gateway (Webhook)**: Built-in `POST /api/integration/query` programmatic endpoint to let external messaging bots (MS Teams, Discord, Slack) or autonomous frameworks (like OpenClaw) query your local knowledge bases and records instantly.
 
 ## 🛠️ Tech Stack
 - **Backend**: Python (FastAPI, Playwright, SQLAlchemy)
-- **Frontend**: HTML5, Vanilla CSS, Javascript
-- **Database**: SQLite (Session management, Role assignments)
+- **Frontend**: HTML5, Vanilla CSS, Javascript (Custom cache-busting, local storage persistence)
+- **Database**: SQLite (Session management, Role assignments, automated indexing, self-healing startup migrations)
 - **AI**: Local LLM Integration (Ollama) + Custom Reasoning Adapters
+- **Autonomous Orchestration Connection**: Built-in compatibility with **OpenClaw (Antigravity)** agent workflows for autonomous multi-turn engineering and local data manipulation.
 
 ## 🔒 Security
 The platform is designed with enterprise security in mind:

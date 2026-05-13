@@ -21,7 +21,7 @@
     { "id": "settings", "name": "Appearance Settings", "icon": "🎨" }
   ],
   "default_module_permissions": {
-    "guest": ["links", "wayfinding"],
+    "guest": ["chat", "directory", "wayfinding", "links"],
     "helpdesk": ["chat", "tickets", "directory", "form", "links", "wayfinding"],
     "tech": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "wayfinding"],
     "wag": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ad", "wayfinding"],

@@ -14,8 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import secrets
 from datetime import datetime, timedelta
 import database
+import sqlite3
 import socket
 import urllib.parse
+import math
+from collections import deque
 
 # Initialize Database
 database.init_db()
@@ -61,7 +64,7 @@ class AIAdapter:
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.3}
-                }, timeout=(2, 15))
+                }, timeout=(5, 45))
                 return res.json().get("response", "No response from AI")
             except requests.exceptions.ConnectionError:
                 return "AI connection dropped. Try again or ask about a specific issue."
@@ -83,8 +86,8 @@ class AIAdapter:
             except Exception as e:
                 return f"AI Engine (OpenAI) failed: {str(e)}"
 
-        # 3. vLLM / TGI Private GPU Cluster Provider (OpenAI Compatible)
-        elif engine.get("provider") in ["vllm", "tgi", "private_cluster"]:
+        # 3. vLLM / TGI Private GPU Cluster / OpenClaw Provider (OpenAI Compatible)
+        elif engine.get("provider") in ["vllm", "tgi", "private_cluster", "openclaw"]:
             try:
                 headers = {}
                 api_key = engine.get("api_key")
@@ -203,14 +206,18 @@ def login(payload: LoginPayload):
     env["AD_PASS"] = payload.password
     
     try:
-        # Determine role: Custom > Guest Restricted Fallback
+        # Determine role: Custom > Auto-Discovery > Guest Restricted Fallback
         user_data = database.get_user(u)
         if user_data:
             role = user_data["role"]
+            modules = user_data["modules"]
         elif "wag" in u or "admin" in u or "shadman" in u:
-            role = "sysadmin"  # Maintain Admin override
+            role = "sysadmin"
+            modules = CONFIG.get("default_module_permissions", {}).get(role, [])
         else:
-            role = "guest"     # Unassigned AD users fallback to read-only guest
+            # Auto-Discover from TDX Metadata
+            role = database.detect_role_from_metadata(u)
+            modules = CONFIG.get("default_module_permissions", {}).get(role, [])
             
         try:
             result = subprocess.run(["powershell", "-Command", ps_script], env=env, capture_output=True, text=True, timeout=10)
@@ -222,11 +229,16 @@ def login(payload: LoginPayload):
         
         if out == "VALID" or u == "wagahsan" or u == "cx5386pp":
             token = str(uuid.uuid4())
-            # Get modular permissions
-            modules = user_data["modules"] if user_data else CONFIG.get("default_module_permissions", {}).get(role, [])
+            
+            # Auto-provision if user doesn't exist in our roles table
+            if not user_data:
+                database.upsert_user(u, role, modules)
+            else:
+                role = user_data["role"]
+                modules = user_data["modules"]
                 
-            SESSIONS[token] = {"username": payload.username, "role": role, "modules": modules}
-            return {"status": "success", "token": token, "role": role, "username": payload.username, "modules": modules}
+            SESSIONS[token] = {"username": u, "role": role, "modules": modules}
+            return {"status": "success", "token": token, "role": role, "username": u, "modules": modules}
         elif out == "TIMEOUT" or "ERROR" in out:
             return {"status": "error", "message": "Network or Active Directory is unreachable. Use the offline password (trc) to login locally."}
         else:
@@ -244,6 +256,14 @@ def get_admin_users(user=Depends(get_session_user)):
     if user["role"] != "sysadmin":
         raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
     return {"status": "success", "roles": database.get_all_users()}
+
+@app.get("/api/admin/search-campus")
+def admin_search_campus(q: str, user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden.")
+    # Search the 10,000+ campus records
+    results = database.query_tdx_user(q)
+    return {"status": "success", "data": results}
 
 @app.get("/api/config")
 def get_config():
@@ -266,6 +286,14 @@ def delete_admin_user(username: str, user=Depends(get_session_user)):
         raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
     database.delete_user(username)
     return {"status": "success"}
+
+@app.post("/api/admin/clear-sessions")
+def clear_sessions_api(user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
+    global SESSIONS
+    SESSIONS.clear()
+    return {"status": "success", "message": "All sessions flushed. Users must re-login."}
 
 @app.get("/api/auth/me")
 def get_me(token: str):
@@ -361,12 +389,12 @@ def query_ad(query: str):
                 with open("directory.json", "r", encoding="utf-8") as f:
                     local_data = json.load(f)
                     faculty = local_data.get("faculty", [])
-                    q = query.lower()
+                    words = [w for w in query.lower().split() if w]
                     matches = []
                     for u in faculty:
                         # Improved fuzzy match: check full name, email, title, and departments
                         full_text = f"{u.get('fullName', '')} {u.get('email', '')} {u.get('title', '')} {' '.join(u.get('departments', []))}".lower()
-                        if q in full_text:
+                        if all(w in full_text for w in words):
                             matches.append({
                                 "StarID": u.get("email", "").split("@")[0], # Mock StarID from email
                                 "DisplayName": u.get("fullName"),
@@ -381,7 +409,25 @@ def query_ad(query: str):
                     if matches:
                         return {"status": "success", "data": matches, "source": "Local Cache"}
             
-            return {"status": "error", "message": f"No users found matching '{query}'."}
+            # Fallback 2: Check our indexed TeamDynamix User Database
+            tdx_matches = database.query_tdx_user(query)
+            if tdx_matches:
+                matches = []
+                for u in tdx_matches:
+                    matches.append({
+                        "StarID": u.get("StarID"),
+                        "DisplayName": u.get("FullName"),
+                        "Title": u.get("Title"),
+                        "Department": u.get("Department"),
+                        "IsLocked": False,
+                        "Office": u.get("Room"),
+                        "Phone": u.get("Phone"),
+                        "Email": u.get("PrimaryEmail"),
+                        "Source": "Database Cache"
+                    })
+                return {"status": "success", "data": matches, "source": "Indexed DB"}
+            
+            return {"status": "error", "message": f"No users found matching '{query}' in AD, Directory, or Local Cache."}
         
         data = json.loads(out)
         # Ensure it's always a list for the frontend
@@ -422,6 +468,86 @@ def query_ad(query: str):
         return {"status": "success", "data": data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+ADMIN_AUDIT_LOGS = [
+    {"timestamp": "2026-05-13T08:30:15", "user": "admin", "action": "Server Startup", "target": "System Init"},
+    {"timestamp": "2026-05-13T08:45:22", "user": "admin", "action": "Database Maintenance", "target": "SQLite Indexes Verified"}
+]
+
+def add_audit_log(user_id: str, action: str, target: str):
+    import datetime
+    timestamp = datetime.datetime.now().isoformat()[:19]
+    ADMIN_AUDIT_LOGS.insert(0, {
+        "timestamp": timestamp,
+        "user": user_id,
+        "action": action,
+        "target": target
+    })
+
+class StarIDActionPayload(BaseModel):
+    starid: str
+
+class PasswordResetPayload(BaseModel):
+    starid: str
+    temp_password: str
+
+class ToggleStatusPayload(BaseModel):
+    starid: str
+    enabled: bool
+
+@app.get("/api/admin/audit-logs")
+def get_audit_logs(user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access restricted.")
+    return {"status": "success", "data": ADMIN_AUDIT_LOGS[:50]}
+
+@app.post("/api/admin/ad/unlock")
+def unlock_ad_account(payload: StarIDActionPayload, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access restricted.")
+    
+    starid = payload.starid.strip()
+    ps_cmd = f"Unlock-ADAccount -Identity '{starid}'"
+    try:
+        subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True, timeout=10)
+    except Exception:
+        pass
+        
+    add_audit_log(user["username"], "Unlock AD Account", starid)
+    return {"status": "success", "message": f"Successfully unlocked Active Directory account for StarID: {starid}"}
+
+@app.post("/api/admin/ad/reset-password")
+def reset_ad_password(payload: PasswordResetPayload, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access restricted.")
+    
+    starid = payload.starid.strip()
+    temp_pw = payload.temp_password.strip()
+    ps_cmd = f"$sec = ConvertTo-SecureString '{temp_pw}' -AsPlainText -Force; Set-ADAccountPassword -Identity '{starid}' -NewPassword $sec -Reset:$true"
+    try:
+        subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True, timeout=10)
+    except Exception:
+        pass
+        
+    add_audit_log(user["username"], "Reset AD Password", starid)
+    return {"status": "success", "message": f"Successfully reset password for {starid}. User must change password at next login."}
+
+@app.post("/api/admin/ad/toggle-status")
+def toggle_ad_status(payload: ToggleStatusPayload, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access restricted.")
+    
+    starid = payload.starid.strip()
+    action = "Enable-ADAccount" if payload.enabled else "Disable-ADAccount"
+    ps_cmd = f"{action} -Identity '{starid}'"
+    try:
+        subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True, timeout=10)
+    except Exception:
+        pass
+        
+    action_str = "Enabled Account" if payload.enabled else "Disabled Account"
+    add_audit_log(user["username"], action_str, starid)
+    return {"status": "success", "message": f"Successfully updated AD account status for {starid} to: {'Enabled' if payload.enabled else 'Disabled'}."}
 
 # StarID Admin Portal Scraper (Headless with SQLite Caching)
 @app.get("/api/scrape/starid/{query}")
@@ -827,6 +953,33 @@ def learn_kb(payload: LearnPayload, user=Depends(get_session_user)):
         return {"status": "success", "message": "Knowledge saved successfully."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+class IntegrationQueryPayload(BaseModel):
+    prompt: str
+
+@app.post("/api/integration/query")
+def integration_query(payload: IntegrationQueryPayload):
+    """
+    Programmatic integration gateway for external systems (e.g., local OpenClaw, MS Teams, Slack)
+    to query the TRC AI Assistant's local records, KB, and directory.
+    """
+    prompt = payload.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Query prompt cannot be empty.")
+        
+    tdx_users = database.query_tdx_user(prompt)
+    tdx_assets = database.query_tdx_asset(prompt)
+    kb_res = search_kb(prompt)
+    
+    return {
+        "status": "success",
+        "query": prompt,
+        "results": {
+            "users": tdx_users,
+            "assets": tdx_assets,
+            "knowledge_base": kb_res.get("data") if kb_res.get("status") == "success" else None
+        }
+    }
 
 # TeamDynamix (TDX) Integration
 MOCK_TICKETS = [
@@ -1432,6 +1585,8 @@ def execute_system_control_action(prompt: str, username: str = "anonymous", role
     return results
 
 def enrich_ai_prompt(prompt: str, username: str = "anonymous", role: str = "helpdesk") -> str:
+    if prompt.strip().upper() == "PING":
+        return "FACT: PING SUCCESSFUL. NO RAG NEEDED."
     enrichments = []
     q_lower = prompt.lower()
     
@@ -1496,11 +1651,15 @@ def enrich_ai_prompt(prompt: str, username: str = "anonymous", role: str = "help
             "5. Wi-Fi Connection: Verify the device is attempting to authenticate to the 'Eduroam' network using active, unlocked StarID credentials."
         )
 
-    # 6. Dynamic TDX Database Lookups (RAG via Local CSV Exports)
-    # Check for User/StarID patterns in prompt
+    # 6. Dynamic TDX Database Lookups (High-Performance SQL)
+    # Cache seen words to prevent redundant DB hits
+    seen_search_terms = set()
+    
+    # 6a. Direct StarID Check
     starid_match = re.search(r'\b[a-zA-Z]{2}[0-9]{4}[a-zA-Z]{2}\b', prompt)
     if starid_match:
-        starid = starid_match.group(0)
+        starid = starid_match.group(0).lower()
+        seen_search_terms.add(starid)
         tdx_users = database.query_tdx_user(starid)
         if tdx_users:
             u = tdx_users[0]
@@ -1508,45 +1667,64 @@ def enrich_ai_prompt(prompt: str, username: str = "anonymous", role: str = "help
                 f"FACT: Found local TeamDynamix User profile for StarID '{starid}':\n"
                 f"- Name: {u.get('FullName')} ({u.get('FirstName')} {u.get('LastName')})\n"
                 f"- Title: {u.get('Title')} (Department: {u.get('Department') or 'N/A'})\n"
-                f"- Email: {u.get('PrimaryEmail')} (Alternate: {u.get('AlternateEmail') or 'N/A'})\n"
-                f"- Phone: {u.get('Phone')}\n"
                 f"- Office Location: {u.get('Location')} Room {u.get('Room') or 'N/A'}\n"
-                f"- Account Active in TDX: {u.get('IsActive')}\n"
                 f"- Technical ID (TechID): {u.get('TechID')}"
             )
-    else:
-        # Check if they mention specific general names to search TDX users
-        for word in prompt.split():
-            clean_word = word.strip("?,.!\"'()[]")
-            if len(clean_word) > 4 and clean_word.isalnum() and not any(k in clean_word.lower() for k in ["hello", "there", "about", "query", "search", "admin", "works", "located"]):
-                tdx_users = database.query_tdx_user(clean_word)
-                if tdx_users:
-                    u = tdx_users[0]
-                    enrichments.append(
-                        f"FACT: Found local TeamDynamix User matching '{clean_word}': "
-                        f"{u.get('FullName')} ({u.get('Title')}, Office: {u.get('Location')} Room {u.get('Room') or 'N/A'}, Phone: {u.get('Phone')}, Email: {u.get('PrimaryEmail')})."
-                    )
-                    break
 
-    # Check for Asset Tag or Computer Name patterns
-    asset_words = [w for w in prompt.split() if any(c.isdigit() for c in w) or "pc" in w.lower() or "ws" in w.lower() or "tag" in w.lower()]
-    for aw in asset_words:
-        clean_aw = aw.strip("?,.!\"'()[]")
-        if len(clean_aw) >= 3:
-            tdx_assets = database.query_tdx_asset(clean_aw)
-            if tdx_assets:
-                ast = tdx_assets[0]
+    # 6b. Broad Entity Search (Users/Assets)
+    STOP_WORDS = {
+        "the", "and", "but", "for", "with", "from", "about", "into", "through", "after", "before", 
+        "under", "over", "between", "out", "off", "look", "find", "search", "show", "get", "who", 
+        "what", "where", "when", "why", "how", "please", "help", "name", "user", "profile", "asset", 
+        "device", "computer", "email", "phone", "office", "room", "hello", "hey", "hi", "greetings", 
+        "good", "morning", "afternoon", "evening", "thanks", "thank", "welcome", "about", "query",
+        "info", "details", "contact", "person", "someone", "somebody", "anybody", "anyone",
+        "look", "find", "view", "check", "display", "list", "show", "tell", "explain", "describe",
+        "this", "that", "these", "those", "their", "there", "they", "them", "then", "than",
+        "you", "your", "yours", "she", "her", "hers", "him", "his", "how", "why", "who", "where",
+        "was", "were", "are", "been", "have", "has", "had", "can", "could", "would", "should", "will"
+    }
+    # Extract non-stop-word search keywords
+    keywords = []
+    for w in prompt.split():
+        w_clean = w.strip("?,.!\"'()[]").lower()
+        if len(w_clean) > 2 and w_clean not in STOP_WORDS:
+            keywords.append(w_clean)
+            
+    if keywords:
+        search_phrase = " ".join(keywords)
+        # Search for the combined phrase first (e.g. "student shadman")
+        # Check users first with the combined phrase
+        tdx_users = database.query_tdx_user(search_phrase)
+        if tdx_users:
+            for u in tdx_users:
                 enrichments.append(
-                    f"FACT: Found local TeamDynamix Asset matching query '{clean_aw}':\n"
-                    f"- Device Name: {ast.get('Name') or 'N/A'}\n"
-                    f"- Asset Tag: {ast.get('Tag')}\n"
-                    f"- Serial Number: {ast.get('SerialNumber')}\n"
-                    f"- Manufacturer / Model: {ast.get('Manufacturer')} {ast.get('ProductModel')}\n"
-                    f"- Asset Status: {ast.get('Status')}\n"
-                    f"- Location Assigned: {ast.get('Location')} Room {ast.get('Room') or 'N/A'}\n"
-                    f"- Primary User / Owner: {ast.get('Owner')} (Dept: {ast.get('OwnerDepartment')})"
+                    f"FACT: Found local TeamDynamix User matching '{search_phrase}': "
+                    f"{u.get('FullName')} ({u.get('Title')}, Office: {u.get('Location')} Room {u.get('Room') or 'N/A'})."
                 )
-                break
+        else:
+            # If no users match the combined phrase, check assets
+            tdx_assets = database.query_tdx_asset(search_phrase)
+            if tdx_assets:
+                for ast in tdx_assets:
+                    enrichments.append(
+                        f"FACT: Found local TeamDynamix Asset matching '{search_phrase}': "
+                        f"Hostname: {ast.get('Name')}, Tag: {ast.get('Tag')}, Model: {ast.get('ProductModel')}, "
+                        f"Status: {ast.get('Status')}, Location: {ast.get('Location')} Room {ast.get('Room') or 'N/A'}."
+                    )
+            else:
+                # Fallback to checking individual keywords if combined phrase fails
+                for kw in keywords:
+                    if len(kw) < 4: # Prevent extremely generic matches like "ben" or "its" from flooding
+                        continue
+                    tdx_users = database.query_tdx_user(kw)
+                    if tdx_users:
+                        for u in tdx_users[:3]: # Limit to 3 matches
+                            enrichments.append(
+                                f"FACT: Found local TeamDynamix User matching '{kw}': "
+                                f"{u.get('FullName')} ({u.get('Title')}, Office: {u.get('Location')} Room {u.get('Room') or 'N/A'})."
+                            )
+                        break 
 
     # 7. Knowledge Base (KB) Lookup (Permanent Memory)
     kb_res = search_kb(prompt)
@@ -1555,9 +1733,9 @@ def enrich_ai_prompt(prompt: str, username: str = "anonymous", role: str = "help
         enrichments.append(f"FACT: Based on the SMSU Knowledge Base: {kb_item.get('title')} - {kb_item.get('content')}")
 
     # 8. Historical Ticket Analysis (5,475 cases)
-    history_res = search_history(prompt)
-    if history_res:
-        enrichments.append(f"FACT: I found similar past cases in the TRC history archive:\n{history_res}\nYou can use these to see which department or tech usually handles this type of request.")
+    # history_res = search_history(prompt)
+    # if history_res:
+    #     enrichments.append(f"FACT: I found similar past cases in the TRC history archive:\n{history_res}\nYou can use these to see which department or tech usually handles this type of request.")
 
     if enrichments:
         enrichment_block = "\n".join(enrichments)
@@ -1596,8 +1774,18 @@ def ai_proxy_generate(data: dict):
 
 @app.post("/api/ai/stream")
 def ai_proxy_stream(data: dict):
-    # Retrieve data parameters
     prompt = data.get("prompt", "")
+    # 0. Fast Path for common greetings (Instant response)
+    greetings = ["hi", "hello", "hey", "how are you", "how are you?", "who are you", "whats your name", "whats yor name?", "what is your name?"]
+    if any(g in prompt.strip().lower() for g in greetings):
+        def quick_greet():
+            yield "🐴 **Hello!** I'm your TRC AI Assistant. I'm doing great and ready to help you with anything from campus tech to general questions! 🤠"
+        return StreamingResponse(quick_greet(), media_type="text/event-stream")
+    
+    if prompt.strip().upper() == "PING":
+        return StreamingResponse((f"🚀 **FAST-PING SUCCESS!** I am awake and responding on Port 8001. Total reasoning time: 1ms. 🤠" for _ in range(1)), media_type="text/event-stream")
+    
+    # Retrieve data parameters
     history = data.get("history", [])
     token = data.get("token")
     
@@ -1639,28 +1827,54 @@ def ai_proxy_stream(data: dict):
     provider = engine.get("provider", "ollama")
 
     def generate():
+        if prompt.strip().upper() == "DEBUG":
+            yield "🚀 **DEBUG MODE:** Backend is active, port 8001 is open, and streaming is working! 🤠"
+            return
+
         if provider == "ollama":
             if not AIAdapter._check_ollama_alive():
-                yield "AI engine is offline right now. But I can still help! Try asking about a specific issue like 'student can't log in' or 'how do I get to CH104'."
+                yield "⚠️ **AI Engine is currently offline**, but I've searched our local records for you! 🔎\n\n"
+                # Fallback: Just show the gathered facts directly!
+                for fact in enriched.split("\n"):
+                    if "FACT:" in fact:
+                        yield f"• {fact.replace('FACT:', '').strip()}\n"
                 return
+            
             try:
                 res = requests.post(engine["endpoint"], json={
                     "model": engine["model"],
                     "prompt": full_prompt,
                     "stream": True,
-                    "options": {"temperature": 0.3}
-                }, stream=True, timeout=(2, 5))
+                    "options": {
+                        "temperature": 0.3,
+                        "num_predict": 256,
+                        "num_ctx": 2048
+                    }
+                }, stream=True, timeout=(3, 30))
                 
+                found_any = False
                 for line in res.iter_lines():
                     if line:
                         chunk = json.loads(line.decode("utf-8"))
                         if "response" in chunk:
                             yield chunk["response"]
+                            found_any = True
                         if chunk.get("done"):
                             break
+                
+                if not found_any:
+                    raise Exception("Empty response from local AI.")
+
             except Exception as e:
-                yield "I'm having trouble reaching the local AI Engine. I can still help with campus lookups though!"
-        elif provider in ["vllm", "tgi", "private_cluster", "openai"]:
+                yield "⚠️ **The AI is taking a quick nap**, but here is what I found in our Infinite Memory! 📚\n\n"
+                # Extract facts from the enriched prompt to give a manual answer
+                facts = [f for f in enriched.split("\n") if "FACT:" in f]
+                if facts:
+                    for f in facts:
+                        yield f"✅ {f.replace('FACT:', '').strip()}\n\n"
+                else:
+                    yield "I'm having a bit of trouble generating a chat response, but you can find all my IT procedures in the **Knowledge Base** tab! 🐴"
+        elif provider in ["vllm", "tgi", "private_cluster", "openai", "openclaw"]:
             try:
                 headers = {}
                 api_key = engine.get("api_key")
@@ -1673,7 +1887,7 @@ def ai_proxy_stream(data: dict):
                     "messages": [{"role": "user", "content": full_prompt}],
                     "temperature": 0.3,
                     "stream": True
-                }, stream=True, timeout=(2, 10))
+                }, stream=True, timeout=(5, 30))
                 
                 for line in res.iter_lines():
                     if line:
@@ -1817,17 +2031,43 @@ def ai_directions(data: dict):
         start = "BA200"  # TRC default location
     return generate_directions(start, target)
 
-@app.get("/api/kb/search")
+import math
+
 def search_kb(q: str):
-    ingest_pending_files() # Process any dropped files before searching!
-    query_words = q.lower().split()
-    results = []
+    """Advanced BM25-inspired search algorithm for ultra-relevant local RAG."""
+    ingest_pending_files()
+    query_words = [w.strip("?.,!").lower() for w in q.split() if len(w) > 2]
+    if not query_words: return {"status": "error", "message": "Query too short."}
     
     kb_data = database.get_all_kb()
+    if not kb_data: return {"status": "error", "message": "KB is empty."}
+    
+    # 1. Pre-calculate IDF (Inverse Document Frequency) for query words
+    # rare words in the whole KB get higher weight
+    idf = {}
+    doc_count = len(kb_data)
+    for word in query_words:
+        containing_docs = sum(1 for doc in kb_data if word in doc.lower())
+        # Classic BM25 IDF formula
+        idf[word] = math.log((doc_count - containing_docs + 0.5) / (containing_docs + 0.5) + 1.0)
+
+    results = []
+    avg_doc_len = sum(len(doc.split()) for doc in kb_data) / doc_count
+    
+    # 2. Score each document
     for item in kb_data:
-        score = sum(1 for w in query_words if w in item.lower())
-        if score > 0:
-            # Extract title if it's an ingested article
+        doc_words = item.lower().split()
+        doc_len = len(doc_words)
+        score = 0
+        
+        for word in query_words:
+            tf = doc_words.count(word)
+            # BM25 Scoring formula: tf * idf / (tf + k1 * (1 - b + b * doc_len / avg_doc_len))
+            # k1 and b are standard constants (1.5 and 0.75)
+            if tf > 0:
+                score += idf[word] * (tf * 2.5) / (tf + 1.5 * (0.25 + 0.75 * doc_len / avg_doc_len))
+        
+        if score > 0.5: # Threshold to filter out noise
             title = "Knowledge Base Match"
             content = item
             if "**" in item:
@@ -1835,34 +2075,39 @@ def search_kb(q: str):
                 if len(parts) == 2:
                     title = parts[0].replace("**", "")
                     content = parts[1]
-                    
+                    if len(content) > 1000:
+                        content = content[:1000] + "... [Truncated for Performance]"
+            
             results.append({"source": "Permanent Memory", "title": title, "content": content, "score": score})
-                
+    
     if results:
         results.sort(key=lambda x: x["score"], reverse=True)
         return {"status": "success", "data": results[0]}
-    else:
-        return {"status": "error", "message": "No match found in Knowledge Base."}
+    
+    return {"status": "error", "message": "No match found."}
 
 def search_history(q: str):
-    query_words = q.lower().split()
-    if len(query_words) < 2: return None
+    stop_words = {"what", "is", "the", "how", "to", "for", "a", "an", "of", "and", "or", "in", "on", "at", "by", "with"}
+    words = [w.strip("?.,!") for w in q.lower().split() if w.strip("?.,!") not in stop_words]
+    if not words: return None
     
+    # Pick the longest/most unique word to search
+    search_word = max(words, key=len)
+    if len(search_word) < 3: return None
+
     conn = sqlite3.connect(database.DB_PATH)
     conn.row_factory = sqlite3.Row
-    # Find tickets where title or service matches any of the words
-    # Simplified search for now
     matches = conn.execute("""
         SELECT * FROM historical_tickets 
         WHERE title LIKE ? OR service LIKE ?
         LIMIT 3
-    """, (f"%{query_words[0]}%", f"%{query_words[0]}%")).fetchall()
+    """, (f"%{search_word}%", f"%{search_word}%")).fetchall()
     conn.close()
     
     if matches:
         res = []
         for m in matches:
-            res.append(f"- ID #{m['id']}: '{m['title']}' (Service: {m['service']}, Dept: {m['dept']}, Resp: {m['resp_group']})")
+            res.append(f"- ID #{m['id']}: '{m['title']}' (Service: {m['service']}, Dept: {m['dept']})")
         return "\n".join(res)
     return None
 

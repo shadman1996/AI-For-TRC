@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import csv
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trc_ai.db")
 
@@ -13,16 +14,16 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
-    # User Roles Table
+    # 1. User Roles Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         username TEXT PRIMARY KEY,
         role TEXT NOT NULL,
-        modules TEXT NOT NULL -- Store as JSON string
+        modules TEXT NOT NULL
     )
     """)
     
-    # Knowledge Base Table
+    # 2. Knowledge Base Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS kb (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,21 +31,218 @@ def init_db():
         source TEXT DEFAULT 'Manual'
     )
     """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_kb_content ON kb(content)")
 
-    # Scraped StarID Profiles Table (Cache)
+    # 3. Scraped StarID Profiles Table (Cache)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS scraped_profiles (
         starid TEXT PRIMARY KEY,
-        profile_data TEXT, -- JSON string
+        profile_data TEXT,
         scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
     
+    # 4. TDX Users Table (High-Speed SQL)
+    try:
+        cursor.execute("SELECT department FROM tdx_users LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("DROP TABLE IF EXISTS tdx_users")
+        
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tdx_users (
+        uid TEXT PRIMARY KEY,
+        username TEXT,
+        fullname TEXT,
+        firstname TEXT,
+        lastname TEXT,
+        email TEXT,
+        title TEXT,
+        phone TEXT,
+        location TEXT,
+        room TEXT,
+        beid TEXT,
+        department TEXT
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_user_username ON tdx_users(username)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_user_fullname ON tdx_users(fullname)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_user_beid ON tdx_users(beid)")
+
+    # 5. TDX Assets Table (High-Speed SQL)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tdx_assets (
+        id TEXT PRIMARY KEY,
+        tag TEXT,
+        serial TEXT,
+        name TEXT,
+        model TEXT,
+        manufacturer TEXT,
+        status TEXT,
+        location TEXT,
+        room TEXT,
+        owner TEXT,
+        owner_dept TEXT,
+        attributes TEXT
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_asset_tag ON tdx_assets(tag)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_asset_serial ON tdx_assets(serial)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_asset_name ON tdx_assets(name)")
+
     conn.commit()
     conn.close()
-    print("SQLite Database initialized.")
+    print("SQLite Database & High-Performance Indexes initialized.")
+    
+    # Auto-migrate if the tdx_users table is empty
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        count = cursor.execute("SELECT count(*) FROM tdx_users").fetchone()[0]
+    except Exception:
+        count = 0
+    conn.close()
+    
+    if count == 0:
+        print("tdx_users is empty. Migrating CSV data to SQLite...")
+        migrate_csv_to_sqlite()
+ 
+def migrate_csv_to_sqlite():
+    """Migrates 10,000+ CSV records to indexed SQLite tables for O(1) lookup speed."""
+    tdx_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "TDX"))
+    users_csv = os.path.join(tdx_dir, "TDXUsers.csv")
+    assets_csv = os.path.join(tdx_dir, "TDXAssets.csv")
+    
+    conn = get_db()
+    
+    # Sync Users
+    if os.path.exists(users_csv):
+        print("Optimizing User Directory (CSV -> SQLite)...")
+        with open(users_csv, "r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            users_to_insert = []
+            for row in reader:
+                users_to_insert.append((
+                    row.get("UID"), row.get("UserName"), row.get("FullName"),
+                    row.get("FirstName"), row.get("LastName"), row.get("PrimaryEmail"),
+                    row.get("Title"), row.get("PrimaryPhone"), row.get("LocationName"),
+                    row.get("LocationRoomName"), row.get("BEID"), row.get("DefaultAccountName")
+                ))
+            conn.executemany("INSERT OR REPLACE INTO tdx_users VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", users_to_insert)
 
-# Cache Portal Scraper Operations
+    # Sync Assets
+    if os.path.exists(assets_csv):
+        print("Optimizing Asset Inventory (CSV -> SQLite)...")
+        with open(assets_csv, "r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            assets_to_insert = []
+            for row in reader:
+                assets_to_insert.append((
+                    row.get("ID"), row.get("Tag"), row.get("SerialNumber"),
+                    row.get("Name"), row.get("ProductModelName"), row.get("ManufacturerName"),
+                    row.get("StatusName"), row.get("LocationName"), row.get("LocationRoomName"),
+                    row.get("RequestingCustomerName") or row.get("OwningCustomerName"),
+                    row.get("RequestingDepartmentName") or row.get("OwningDepartmentName"),
+                    row.get("Attributes")
+                ))
+            conn.executemany("INSERT OR REPLACE INTO tdx_assets VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", assets_to_insert)
+
+    conn.commit()
+    conn.close()
+    print("CSV Intelligence Migration Complete.")
+
+# --- OPTIMIZED SEARCH ALGORITHMS ---
+
+def query_tdx_user(query_str):
+    query_str = query_str.lower().strip()
+    words = [w.strip() for w in query_str.split() if w.strip()]
+    if not words:
+        return []
+        
+    conn = get_db()
+    # We construct a dynamic SQL intersection query to match ALL keywords.
+    # Each keyword can match either username, fullname, department, or title.
+    sql = "SELECT * FROM tdx_users WHERE "
+    conditions = []
+    params = []
+    for w in words:
+        conditions.append("(username LIKE ? OR fullname LIKE ? OR department LIKE ? OR title LIKE ? OR beid = ?)")
+        params.extend([f"%{w}%", f"%{w}%", f"%{w}%", f"%{w}%", w])
+    sql += " AND ".join(conditions) + " LIMIT 10"
+    
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    
+    results = []
+    for row in rows:
+        results.append({
+            "UID": row["uid"], "StarID": row["username"], "FullName": row["fullname"],
+            "FirstName": row["firstname"], "LastName": row["lastname"],
+            "PrimaryEmail": row["email"], "Title": row["title"], "Phone": row["phone"],
+            "Location": row["location"], "Room": row["room"], "TechID": row["beid"],
+            "Department": row["department"],
+            "Source": "Indexed TDX Directory"
+        })
+    return results
+
+def detect_role_from_metadata(username):
+    """Predicts a role based on the user's title and department in the directory."""
+    results = query_tdx_user(username)
+    if not results:
+        return "guest"
+    
+    user = results[0]
+    title = (user.get("Title") or "").lower()
+    dept = (user.get("Department") or "").lower()
+    
+    if any(kw in title for kw in ["admin", "director", "manager", "coordinator"]):
+        return "sysadmin"
+    if any(kw in title for kw in ["technician", "engineer", "specialist"]) or "its" in dept:
+        return "tech"
+    if any(kw in title for kw in ["student worker", "help desk"]) or "trc" in dept:
+        return "helpdesk"
+        
+    return "guest"
+
+def query_tdx_asset(query_str):
+    query_str = query_str.lower().strip()
+    words = [w.strip() for w in query_str.split() if w.strip()]
+    if not words:
+        return []
+        
+    conn = get_db()
+    # Check exact tag or serial if they are single word/token
+    if len(words) == 1:
+        exact = words[0]
+        rows = conn.execute("""
+            SELECT * FROM tdx_assets 
+            WHERE tag = ? OR serial = ? OR name LIKE ? OR attributes LIKE ?
+            LIMIT 10
+        """, (exact, exact, f"%{exact}%", f"%{exact}%")).fetchall()
+    else:
+        # Dynamic SQL intersection for multi-word
+        sql = "SELECT * FROM tdx_assets WHERE "
+        conditions = []
+        params = []
+        for w in words:
+            conditions.append("(tag LIKE ? OR serial LIKE ? OR name LIKE ? OR owner LIKE ? OR owner_dept LIKE ? OR attributes LIKE ?)")
+            params.extend([f"%{w}%", f"%{w}%", f"%{w}%", f"%{w}%", f"%{w}%", f"%{w}%"])
+        sql += " AND ".join(conditions) + " LIMIT 10"
+        rows = conn.execute(sql, params).fetchall()
+        
+    conn.close()
+    
+    results = []
+    for row in rows:
+        results.append({
+            "ID": row["id"], "Tag": row["tag"], "SerialNumber": row["serial"],
+            "Name": row["name"], "ProductModel": row["model"], "Manufacturer": row["manufacturer"],
+            "Status": row["status"], "Location": row["location"], "Room": row["room"],
+            "Owner": row["owner"], "OwnerDepartment": row["owner_dept"], "Source": "Indexed Asset Catalog"
+        })
+    return results
+
+# --- LEGACY METHODS (MIGRATED TO SQL) ---
+
 def get_cached_profile(starid):
     conn = get_db()
     row = conn.execute("SELECT * FROM scraped_profiles WHERE starid = ?", (starid.lower(),)).fetchone()
@@ -58,62 +256,16 @@ def get_cached_profile(starid):
 
 def save_profile_cache(starid, profile_dict):
     conn = get_db()
-    conn.execute("""
-        INSERT OR REPLACE INTO scraped_profiles (starid, profile_data, scraped_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-    """, (starid.lower(), json.dumps(profile_dict)))
+    conn.execute("INSERT OR REPLACE INTO scraped_profiles (starid, profile_data, scraped_at) VALUES (?, ?, CURRENT_TIMESTAMP)", 
+                 (starid.lower(), json.dumps(profile_dict)))
     conn.commit()
     conn.close()
 
-def migrate_data():
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    roles_path = os.path.join(current_dir, "roles.json")
-    kb_path = os.path.join(current_dir, "kb.json")
-    
-    conn = get_db()
-    cursor = conn.cursor()
-    
-    # Migrate Roles
-    if os.path.exists(roles_path):
-        print("Migrating roles.json to SQLite...")
-        with open(roles_path, "r") as f:
-            try:
-                roles = json.load(f)
-                for username, data in roles.items():
-                    role = data if isinstance(data, str) else data.get("role", "helpdesk")
-                    modules = data.get("modules", []) if isinstance(data, dict) else []
-                    cursor.execute("INSERT OR IGNORE INTO users (username, role, modules) VALUES (?, ?, ?)", 
-                                   (username.lower(), role, json.dumps(modules)))
-            except Exception as e:
-                print(f"Error migrating roles: {e}")
-                
-    # Migrate KB
-    if os.path.exists(kb_path):
-        print("Migrating kb.json to SQLite...")
-        with open(kb_path, "r") as f:
-            try:
-                kb_data = json.load(f)
-                for item in kb_data:
-                    cursor.execute("INSERT INTO kb (content) VALUES (?)", (item,))
-            except Exception as e:
-                print(f"Error migrating KB: {e}")
-                
-    conn.commit()
-    conn.close()
-    print("Migration complete.")
-
-# User Operations
 def get_user(username):
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE username = ?", (username.lower(),)).fetchone()
     conn.close()
-    if user:
-        return {
-            "username": user["username"],
-            "role": user["role"],
-            "modules": json.loads(user["modules"])
-        }
-    return None
+    return {"username": user["username"], "role": user["role"], "modules": json.loads(user["modules"])} if user else None
 
 def get_all_users():
     conn = get_db()
@@ -134,7 +286,6 @@ def delete_user(username):
     conn.commit()
     conn.close()
 
-# KB Operations
 def add_kb_entry(content, source="Manual"):
     conn = get_db()
     conn.execute("INSERT INTO kb (content, source) VALUES (?, ?)", (content, source))
@@ -147,100 +298,33 @@ def get_all_kb():
     conn.close()
     return [e["content"] for e in entries]
 
-# --- TDX LOCAL DATABASE INTEGRATION ---
-def query_tdx_user(query_str):
-    tdx_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "TDX"))
-    users_csv = os.path.join(tdx_dir, "TDXUsers.csv")
-    if not os.path.exists(users_csv):
-        return []
-        
-    query_str = query_str.lower().strip()
-    results = []
+def migrate_data():
+    """Migrates older JSON files and CSVs to unified SQLite engine."""
+    init_db()
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    roles_path = os.path.join(current_dir, "roles.json")
+    kb_path = os.path.join(current_dir, "kb.json")
     
-    try:
-        with open(users_csv, "r", encoding="utf-8-sig") as f:
-            import csv
-            reader = csv.DictReader(f)
-            for row in reader:
-                username = row.get("UserName", "") or ""
-                fullname = row.get("FullName", "") or ""
-                beid = row.get("BEID", "") or ""
-                
-                if (query_str in username.lower() or 
-                    query_str in fullname.lower() or 
-                    query_str == beid.lower()):
-                    
-                    results.append({
-                        "UID": row.get("UID"),
-                        "StarID": username,
-                        "FullName": fullname,
-                        "FirstName": row.get("FirstName"),
-                        "LastName": row.get("LastName"),
-                        "PrimaryEmail": row.get("PrimaryEmail"),
-                        "AlternateEmail": row.get("AlternateEmail"),
-                        "Title": row.get("Title"),
-                        "Phone": row.get("PrimaryPhone") or row.get("WorkPhone") or row.get("MobilePhone") or "N/A",
-                        "Location": row.get("LocationName"),
-                        "Room": row.get("LocationRoomName"),
-                        "IsActive": row.get("IsActive"),
-                        "TechID": beid,
-                        "Source": "TDX Database Dump"
-                    })
-    except Exception as e:
-        print("Error reading TDX Users:", e)
-        
-    return results
-
-def query_tdx_asset(query_str):
-    tdx_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "TDX"))
-    assets_csv = os.path.join(tdx_dir, "TDXAssets.csv")
-    if not os.path.exists(assets_csv):
-        return []
-        
-    query_str = query_str.lower().strip()
-    # Strip colons or dashes from MAC queries to make it highly search resilient
-    query_clean = query_str.replace(":", "").replace("-", "")
-    results = []
+    conn = get_db()
+    # Migrate Roles JSON
+    if os.path.exists(roles_path):
+        with open(roles_path, "r") as f:
+            roles = json.load(f)
+            for u, d in roles.items():
+                r = d if isinstance(d, str) else d.get("role", "helpdesk")
+                m = d.get("modules", []) if isinstance(d, dict) else []
+                conn.execute("INSERT OR IGNORE INTO users (username, role, modules) VALUES (?, ?, ?)", (u.lower(), r, json.dumps(m)))
     
-    try:
-        with open(assets_csv, "r", encoding="utf-8-sig") as f:
-            import csv
-            reader = csv.DictReader(f)
-            for row in reader:
-                tag = row.get("Tag", "") or ""
-                serial = row.get("SerialNumber", "") or ""
-                name = row.get("Name", "") or ""
-                attributes = row.get("Attributes", "") or ""
-                
-                tag_match = query_str in tag.lower()
-                serial_match = query_str in serial.lower()
-                name_match = query_str in name.lower()
-                
-                attr_match = False
-                if query_clean and len(query_clean) >= 12:
-                    attr_match = query_clean in attributes.lower().replace(":", "").replace("-", "")
-                    
-                if tag_match or serial_match or name_match or attr_match:
-                    results.append({
-                        "ID": row.get("ID"),
-                        "Tag": tag,
-                        "SerialNumber": serial,
-                        "Name": name,
-                        "ProductModel": row.get("ProductModelName"),
-                        "Manufacturer": row.get("ManufacturerName"),
-                        "Status": row.get("StatusName"),
-                        "Location": row.get("LocationName"),
-                        "Room": row.get("LocationRoomName"),
-                        "Owner": row.get("RequestingCustomerName") or row.get("OwningCustomerName") or "N/A",
-                        "OwnerDepartment": row.get("RequestingDepartmentName") or row.get("OwningDepartmentName") or "N/A",
-                        "CreatedDate": row.get("CreatedDate"),
-                        "Source": "TDX Asset Catalog"
-                    })
-    except Exception as e:
-        print("Error reading TDX Assets:", e)
-        
-    return results
+    # Migrate KB JSON
+    if os.path.exists(kb_path):
+        with open(kb_path, "r") as f:
+            kb_data = json.load(f)
+            for item in kb_data:
+                conn.execute("INSERT INTO kb (content) VALUES (?)", (item,))
+    
+    conn.commit()
+    conn.close()
+    migrate_csv_to_sqlite()
 
 if __name__ == "__main__":
-    init_db()
     migrate_data()
