@@ -157,9 +157,10 @@
           </div>
         </div>
       </div>
-      <div class="directory-search-bar">
-        <input type="text" id="sccmSearchInput" placeholder="🔍 Search PC Name or StarID..." onkeydown="if(event.key==='Enter') searchSCCMTab()"/>
-        <button class="btn-primary" onclick="searchSCCMTab()">Search PC</button>
+      <div class="module-search-row">
+        <span class="search-icon">💻</span>
+        <input type="text" id="sccmSearchInput" placeholder="Search PC Name, Device Name, or MAC..." onkeydown="if(event.key==='Enter') searchSCCMTab()"/>
+        <button onclick="searchSCCMTab()">🔍 Search PC</button>
       </div>
       <div class="directory-results" id="sccmResults">
         <div class="ticket-placeholder">
@@ -180,9 +181,10 @@
           </div>
         </div>
       </div>
-      <div class="directory-search-bar">
-        <input type="text" id="mistSearchInput" placeholder="🔍 Enter MAC Address (e.g. 00:11:22:33:44:55)..." onkeydown="if(event.key==='Enter') searchMistTab()"/>
-        <button class="btn-primary" onclick="searchMistTab()">Lookup Client</button>
+      <div class="module-search-row">
+        <span class="search-icon">📡</span>
+        <input type="text" id="mistSearchInput" placeholder="Enter MAC Address (e.g. 00:11:22:33:44:55)..." onkeydown="if(event.key==='Enter') searchMistTab()"/>
+        <button onclick="searchMistTab()">🔍 Lookup Client</button>
       </div>
       <div class="directory-results" id="mistResults">
         <div class="ticket-placeholder">
@@ -206,9 +208,10 @@
           🌐 Launch Cisco ISE Admin
         </a>
       </div>
-      <div class="directory-search-bar">
-        <input type="text" id="iseSearchInput" placeholder="🔍 Enter MAC Address or StarID (e.g. WAGAhsan)..." onkeydown="if(event.key==='Enter') searchIseTab()"/>
-        <button class="btn-primary" onclick="searchIseTab()">Lookup Network Session</button>
+      <div class="module-search-row">
+        <span class="search-icon">🛡️</span>
+        <input type="text" id="iseSearchInput" placeholder="Enter MAC Address or StarID (e.g. wagahsan)..." onkeydown="if(event.key==='Enter') searchIseTab()"/>
+        <button onclick="searchIseTab()">🔍 Lookup Session</button>
       </div>
       <div class="directory-results" id="iseResults">
         <div class="ticket-placeholder">

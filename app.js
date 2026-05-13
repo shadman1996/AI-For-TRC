@@ -147,7 +147,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadDirectoryData();
   await loadTickets(); 
   await loadSystemConfig(); // Load integration settings
-  renderMaps();
+  renderMapList(allFloorPlans);
   checkOllamaStatus();
   initNotifications();
   if (USER_MODULES.length > 0) renderSidebar();
@@ -709,7 +709,7 @@ async function checkEnterpriseTools(text) {
   }
   
   // SCCM Check Intent
-  if (lower.includes("check sccm") || lower.includes("find computer")) {
+  if (lower.includes("check sccm") || lower.includes("find computer") || lower.includes("find pc") || lower.includes("find this pc")) {
     const words = lower.split(" ");
     const device = words[words.length - 1];
     appendMessage(`🐴 Querying SCCM Database for device: **${device}**...`, 'ai');
@@ -998,6 +998,8 @@ async function searchSCCMTab() {
             `;
           }
         } catch (mistErr) {
+          console.error("Mist fallback failed:", mistErr);
+        }
       } else {
         resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ ${data.message}</h3></div>`;
       }
@@ -1031,7 +1033,7 @@ function renderSCCMResults(pcs) {
         </div>
         <div class="pm-body" style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
           <div class="pm-info-block">
-             <div class="pm-info-row"><span class="pm-label">🛠️ Model</span><span class="pm-value">${pc.Model}</span></div>
+             <div class="pm-info-row"><span class="pm-label">🖥️ OS</span><span class="pm-value">${pc.Model}</span></div>
              <div class="pm-info-row"><span class="pm-label">🏭 Maker</span><span class="pm-value">${pc.Manufacturer || 'N/A'}</span></div>
              <div class="pm-info-row"><span class="pm-label">🆔 Serial</span><span class="pm-value">${pc.SerialNumber || 'N/A'}</span></div>
           </div>
@@ -1043,12 +1045,12 @@ function renderSCCMResults(pcs) {
           </div>
         </div>
         <div class="pm-action-bar" style="flex-wrap: wrap;">
-          <button class="pm-btn primary" onclick="triggerRemoteAction('${pc.PCName}', 'Sync Policy', this, '${pc.ResourceID}')" title="Sync Policy">🔄 Sync</button>
-          <button class="pm-btn secondary" onclick="triggerRemoteAction('${pc.PCName}', 'Scan Updates', this, '${pc.ResourceID}')" title="Scan Updates">🔍 Scan</button>
-          <button class="pm-btn secondary" onclick="triggerRemoteAction('${pc.PCName}', 'Evaluate Updates', this, '${pc.ResourceID}')" title="Eval Updates">🚀 Eval</button>
+          <button class="pm-btn primary" onclick="triggerRemoteAction('${pc.ResourceID}', 'sync_policy', this)" title="Sync Policy">🔄 Sync</button>
+          <button class="pm-btn secondary" onclick="triggerRemoteAction('${pc.ResourceID}', 'scan_updates', this)" title="Scan Updates">🔍 Scan</button>
+          <button class="pm-btn secondary" onclick="triggerRemoteAction('${pc.ResourceID}', 'eval_updates', this)" title="Eval Updates">🚀 Eval</button>
           <button class="pm-btn secondary" onclick="window.open('rdp://${pc.PCName}')" title="Remote Desktop">🖥️ RDP</button>
           <button class="pm-btn secondary" onclick="window.open('ms-ra:ms-assistance?requestee=${pc.PCName}')" title="Remote Assistance">🤝 MSRA</button>
-          <button class="pm-btn danger" onclick="triggerRemoteAction('${pc.PCName}', 'Reboot', this, '${pc.ResourceID}')" title="Force Reboot">♻️ Reboot</button>
+          <button class="pm-btn danger" onclick="triggerRemoteAction('${pc.ResourceID}', 'reboot', this)" title="Force Reboot">♻️ Reboot</button>
         </div>
       </div>
     `;
