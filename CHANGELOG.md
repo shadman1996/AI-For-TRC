@@ -2,7 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.2.0] - 2026-05-13 (Current)
+## [3.3.0] - 2026-05-13 (Current)
+### Added
+- **Cisco Identity Services Engine (ISE) Integration**: Launched a brand-new "Cisco ISE Security" module for network security diagnostics. Technicians can query endpoint sessions, view dynamic VLAN allocations, trace switch IPs and ports, and trigger Change of Authorization (CoA) actions to Quarantine or Restore devices instantly.
+- **Admin Console Launcher**: Embedded a quick-link directly in the view header to easily jump to the live Cisco ISE admin dashboard (`https://ise.smsu.edu/admin/`).
+
+## [3.2.0] - 2026-05-13
 ### Added
 - **Premium Appearance & Personalization Suite**: Complete visual redesign adding customizable high-density typography (fonts like Outfit, Inter, Playfair), adjustable Glassmorphism intensities (Frosted, Translucent, solid), and flexible Chat Bubble Framing shapes.
 - **Active Directory Account Operations**: Brand-new operations panel inside AD & User Management allowing direct StarID lookups, account status toggles, lockouts checks, password resets, and account unlocking.
