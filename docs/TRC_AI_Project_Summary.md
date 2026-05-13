@@ -57,21 +57,22 @@ Staff can type `"Check AD for [username]"` and instantly see:
 
 This eliminates the need to open and navigate the AD console for routine lookups.
 
-### 3. SCCM Device Lookup & Remote Management
+### 3. SCCM & Jamf Device Lookup & Remote Management
 Staff can type `"Find computer [device name]"` and instantly see:
-- **Enriched Telemetry**: Last logged-in user, Serial Number, Manufacturer, Client Version, and AD Site.
+- **Enriched Telemetry**: Last logged-in user, Serial Number, OS Version, and IP Address.
+- **Cross-Platform Support**: Automatically routes Windows devices to **SCCM** and Apple devices (iPads, MacBooks) to **Jamf Cloud**.
 - **Advanced Actions**: Trigger Policy Sync, Scan for Updates, or perform a **Force Reboot** directly from the dashboard.
 - **Integrated Control**: Launch Remote Desktop (RDP) or Remote Assistance (MSRA) sessions with one click.
 
-Connects securely via the SCCM AdminService REST API over HTTPS on the internal network.
+Connects securely via SCCM AdminService REST API and Jamf Cloud API over HTTPS.
 
 ### 4. Juniper Mist WiFi Diagnostics
-### 5. Intelligent Device Tracking & Cross-Platform Intelligence
-The AI assistant now performs deep, cross-platform resolution:
+### 5. Unified Connectivity Trace Engine
+The AI assistant performs deep, cross-platform resolution across the entire infrastructure stack:
+- **"Everything is Connected" API**: The system maps `AD ➔ TDX ➔ SCCM/Jamf ➔ ISE ➔ Mist` in a single query.
 - **Identity Correlation**: Resolves Asset Tags to specific Owners and Departments via TDX.
 - **Location Intelligence**: Maps MAC addresses to specific **Access Points** (WiFi) or **Switch Ports** (Wired) via Mist/ISE.
-- **Signal Tracking**: Reports live Signal Strength (RSSI) to help physically locate devices on campus.
-- **Intelligent Context**: When a PC name is mentioned in chat, the AI automatically fetches its user, department, and network location as a background "Fact".
+- **Visual Trace Cards**: Generates premium, glassmorphic UI components connecting a user to their devices, network location, and live signal strength.
 
 ### 6. Intelligent Knowledge Base
 The AI has two layers of knowledge:
@@ -88,9 +89,12 @@ Administrators can drag-and-drop any CSV, TXT, or JSON file (such as a TDX KB ex
 ### 7. Secure Login & Role-Based Access Control
 Staff log in via StarID. The system assigns one of four roles with granular permissions:
 - **Help Desk**: Chat, ticket guidance, directory lookup.
-- **Tech**: Above + SCCM & Mist diagnostics.
+- **Tech**: Above + SCCM, Jamf & Mist diagnostics.
 - **WAG**: Above + elevated AD options.
-- **System Admin**: Full access + Admin Panel for role management, KB ingestion, and **Deployment Monitoring**.
+- **System Admin**: Full access + Admin Panel.
+
+### 8. Human-In-The-Loop (HITL) Governance
+All destructive or high-privilege remote actions (e.g., AD Password Resets, SCCM Restarts, AD Unlocks) are gate-kept by a strict **WAG Approval** modal. The AI orchestrates the action but requires an explicit authorization PIN from WAG leadership before modifying production systems.
 
 ### 9. Premium SysAdmin Command Center (v3.5.0)
 The administrative modules have been fully redesigned with a **Premium Glassmorphic UI**:

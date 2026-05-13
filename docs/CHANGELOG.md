@@ -4,10 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [3.4.0] - 2026-05-13 (Current)
 ### Added
-- **Unified Trace API (Everything is Connected)**: The AI now features a "global brain" capable of linking AD, TDX, SCCM, ISE, and Mist. Technicians can instantly map users to their primary devices, current IP addresses, and physical network switch/AP locations.
+- **Unified Trace API (Everything is Connected)**: The AI now features a "global brain" capable of linking AD, TDX, SCCM, Jamf, ISE, and Mist. Technicians can instantly map users to their primary devices, current IP addresses, and physical network switch/AP locations.
+- **Jamf Cloud Integration**: Added support for Apple Device Management. iPads and MacBooks are now seamlessly routed through the Jamf Cloud API for telemetry and reporting.
+- **Human-In-The-Loop (HITL) WAG Approval**: All destructive remote actions (AD Unlocks, PC Restarts) now enforce a strict WAG Approval PIN modal, ensuring the AI cannot execute high-privilege changes without documented human authorization.
 - **Encrypted Configuration Engine**: Implemented `security.py` to achieve zero-plaintext secrets. All API keys, tokens, and passwords in `config.json` are now AES-256 encrypted and decrypted securely in memory at runtime.
 - **Hardened Authentication**: Replaced legacy master passwords with strict Active Directory role-validation for all non-emergency access.
 - **Premium Connectivity UI**: Designed new glassmorphic Trace Cards and Unified Profile views to beautifully visualize cross-platform entity links.
+- **Flat-File Migration & Cleanup**: Purged all legacy JSON data stores (`roles.json`, `kb.json`, `directory.json`) in favor of the optimized `trc_ai.db` SQLite engine.
 
 ## [3.3.0] - 2026-05-13
 ### Added

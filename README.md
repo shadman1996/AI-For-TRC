@@ -11,10 +11,10 @@ Detailed guides are available in the [docs/](docs/SYSTEM_GUIDE.md) directory:
 - [🛠️ System Guide](docs/SYSTEM_GUIDE.md)
 
 ## 🚀 Core Features
-- **Unified Connectivity Graph**: "Everything is Connected." The AI engine automatically traverses Active Directory, SCCM, TDX, and Cisco ISE to build full relationship maps (User ➔ Device ➔ Network IP ➔ Physical Switch/AP).
-- **Intelligent Orchestration**: Automatically detects user intent (AD lookup, SCCM search, WiFi status, KB search, Entity Trace).
+- **Unified Connectivity Graph**: "Everything is Connected." The AI engine automatically traverses Active Directory, TDX, SCCM, Jamf Cloud, and Cisco ISE to build full relationship maps (User ➔ Device ➔ Network IP ➔ Physical Switch/AP).
+- **Intelligent Orchestration**: Automatically detects user intent (AD lookup, SCCM/Jamf search, WiFi status, KB search, Entity Trace).
 - **Deep Search**: Headless scraping of the StarID Admin Portal for extended user profiles.
-- **Remote Actions**: Trigger SCCM policy syncs and update scans directly from chat.
+- **Remote Actions**: Trigger SCCM policy syncs, update scans, and device restarts directly from chat, with built-in Apple device management via Jamf.
 - **Modular Permissions**: Granular role-based access for Help Desk, Tech, WAG, and SysAdmin staff.
 - **Knowledge Ingestion**: Drag-and-drop documentation into the AI's brain for instant learning.
 - **Premium Customization Suite**: Personalize appearance using curated themes (including Cyberpunk, Nordic, Amethyst, and Dracula), Font Typography (Inter, Outfit, Roboto Mono, Playfair), Glassmorphic Intensity levels, and Chat Bubble Framing.
@@ -32,7 +32,7 @@ The platform is designed with enterprise security in mind:
 - **Zero-Plaintext Secrets**: All API keys, AD passwords, and integration tokens in `config.json` are AES-256 encrypted via a machine-bound `security.py` manager.
 - **Zero-Trust UI**: All sensitive actions (Remote Restarts, Deep Searches) are restricted to authorized AD roles.
 - **Local-First**: Sensitive data remains within the campus network.
-- **Human-in-the-Loop Governance**: This is the ultimate IT support AI, but **NO CHANGES** may be made to the system architecture or configurations without explicit, documented approval from **Wag** (with AI facilitating the human-in-the-loop review process).
+- **Human-in-the-Loop Governance**: This is the ultimate IT support AI, but **NO CHANGES** may be made to the system architecture or configurations without explicit, documented approval from **Wag**. Additionally, all destructive remote actions (AD Unlocks, PC Restarts) enforce a **WAG Approval PIN Modal** before executing.
 
 ## 💻 Installation & Setup
 
