@@ -2071,6 +2071,28 @@ def find_path(start_bldg: str, end_bldg: str) -> list:
                 queue.append(path + [neighbor])
     return []
 
+def draw_3d_route(start_bldg: str, end_bldg: str) -> str:
+    """Generates an intuitive voxel ASCII 3D map showing the elevation transition path."""
+    b1 = start_bldg.upper()
+    b2 = end_bldg.upper()
+    
+    # Render dynamic high-density ASCII 3D map representation
+    ascii_map = (
+        f"<pre style='font-family: monospace; line-height: 1.25; color: var(--accent2); background: rgba(255,255,255,0.02); padding: 12px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.05); margin-top: 15px; font-size: 11px;'>\n"
+        f"       🧠 AI 3D NAVIGATION HYPER-VOXEL PROJECTION:\n"
+        f"       ┌────────────────────────────────────────────────────────┐\n"
+        f"       │                                                        │\n"
+        f"       │   🔼 Level 3  [ {b1:3} ] ── (Bridge Link) ── [ {b2:3} ]    │\n"
+        f"       │                 │                              │       │\n"
+        f"       │   ⏺️ Level 2  [ TRC ] ── (Central Hub) ── [ {b2:3} ]    │\n"
+        f"       │                 │                              │       │\n"
+        f"       │   🔽 Level 1  [ {b1:3} ] ── (Main Tunnel) ── [ {b2:3} ]    │\n"
+        f"       │                                                        │\n"
+        f"       └────────────────────────────────────────────────────────┘\n"
+        f"       *Note: Take central lift/stairwell to switch elevations.</pre>"
+    )
+    return ascii_map
+
 def generate_directions(start_raw: str, target_raw: str) -> dict:
     """Generate instant step-by-step directions."""
     start_bldg, start_room = parse_room(start_raw)
@@ -2092,12 +2114,12 @@ def generate_directions(start_raw: str, target_raw: str) -> dict:
             steps.append(f"🔼 Take the stairs or elevator {direction} from floor {floor_start} to floor {floor_end}.")
         steps.append(f"🚪 Look for room {target_bldg}{target_room} — check the door signs along the hallway.")
         steps.append(f"🚩 You've arrived at {target_bldg}{target_room}!")
-        return {"status": "success", "directions": "\n".join(steps), "buildings": [start_bldg], "map_hint": target_bldg}
+        return {"status": "success", "directions": "|||".join(steps), "buildings": [start_bldg], "map_hint": target_bldg}
     
     path = find_path(start_bldg, target_bldg)
     
     if not path:
-        return {"status": "success", "directions": f"📍 Start at {start_raw}\n❓ I don't have a mapped route from {start_bldg} to {target_bldg} yet. Please ask a staff member or check the campus map at the nearest kiosk.\n💡 Tip: Try using the Wayfinding tab to view floor plans for {target_bldg}.", "buildings": [], "map_hint": target_bldg}
+        return {"status": "success", "directions": f"📍 Start at {start_raw}|||❓ I don't have a mapped route from {start_bldg} to {target_bldg} yet. Please ask a staff member or check the campus map at the nearest kiosk.|||💡 Tip: Try using the Wayfinding tab to view floor plans for {target_bldg}.", "buildings": [], "map_hint": target_bldg}
     
     steps = []
     steps.append(f"📍 Starting at {start_raw} in {CAMPUS_GRAPH.get(start_bldg, {}).get('name', start_bldg)}.")
@@ -2123,8 +2145,9 @@ def generate_directions(start_raw: str, target_raw: str) -> dict:
         steps.append(f"🚪 Find room **{target_bldg}{target_room}** along the hallway.")
     
     steps.append(f"🚩 You've arrived at **{target_raw}**!")
+    steps.append(draw_3d_route(start_bldg, target_bldg))
     
-    return {"status": "success", "directions": "\n".join(steps), "buildings": path, "map_hint": target_bldg}
+    return {"status": "success", "directions": "|||".join(steps), "buildings": path, "map_hint": target_bldg}
 
 @app.post("/api/ai/directions")
 def ai_directions(data: dict):

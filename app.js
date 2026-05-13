@@ -1,7 +1,8 @@
 let SYSTEM_MODULES = [];
 let USER_MODULES = JSON.parse(localStorage.getItem('trc_modules')) || [];
 let currentView = 'chat';
-let userCurrentLocation = "the Technology Resource Center (TRC) in Bellows Academic (BA)";
+let userCurrentLocation = '';
+let pendingWayfindingTarget = '';
 
 // ----- THEME & AVATAR MANAGEMENT -----
 function applyAppearanceClasses() {
@@ -321,6 +322,16 @@ async function sendMessage() {
   console.log("DEBUG: sendMessage triggered with text:", text);
   appendTyping(typingId);
   
+  // Intercept starting location reply if we have a pending target
+  if (pendingWayfindingTarget) {
+    removeTyping(typingId);
+    userCurrentLocation = text.trim().toUpperCase();
+    const target = pendingWayfindingTarget;
+    pendingWayfindingTarget = '';
+    getDirections(target, userCurrentLocation);
+    return;
+  }
+
   // --- FAST LOCAL INTENT DETECTION (runs FIRST, no AI call needed) ---
   const lower = text.toLowerCase();
   
@@ -1820,6 +1831,12 @@ function renderMapList(maps) {
 }
 
 async function getDirections(target, start = userCurrentLocation) {
+  if (!start) {
+    pendingWayfindingTarget = target;
+    switchView('chat');
+    appendMessage(`🚶 **Let's map that out!** Where are you starting from right now? (e.g., *BA 224*, *Student Center*, *SM 105*, or *TRC Help Desk*)`, 'ai');
+    return;
+  }
   showToast(`AI Calculating path...`, 'info');
   switchView('chat');
   
@@ -1845,7 +1862,7 @@ async function getDirections(target, start = userCurrentLocation) {
     removeTyping(typingId);
     
     if (data.status === 'success') {
-      const steps = data.directions.split('\n').filter(s => s.trim().length > 0);
+      const steps = data.directions.split('|||').filter(s => s.trim().length > 0);
       let currentStepIdx = 0;
       
       const renderStep = (idx) => {
