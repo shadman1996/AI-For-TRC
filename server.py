@@ -319,6 +319,9 @@ def admin_search_campus(q: str, user=Depends(get_session_user)):
 @app.get("/api/config")
 def get_config():
     # Publicly readable configuration for UI rendering
+    # Reload config to pick up new modules/settings without restart
+    global CONFIG
+    CONFIG = load_config()
     return {"status": "success", "config": CONFIG}
 
 @app.post("/api/admin/users")
@@ -349,6 +352,12 @@ def clear_sessions_api(user=Depends(get_session_user)):
 @app.get("/api/auth/me")
 def get_me(token: str):
     if token in SESSIONS:
+        # Re-fetch modules from database to capture live permission changes
+        u = SESSIONS[token]["username"]
+        user_data = database.get_user(u)
+        if user_data:
+            SESSIONS[token]["modules"] = user_data["modules"]
+            SESSIONS[token]["role"] = user_data["role"]
         return {"status": "success", "data": SESSIONS[token]}
     return {"status": "error", "message": "Unauthorized"}
 
@@ -559,6 +568,7 @@ def get_system_glimpse(user=Depends(get_session_user)):
     ad_actions = sum(1 for log in ADMIN_AUDIT_LOGS if log.get("platform") == "Active Directory")
     ise_actions = sum(1 for log in ADMIN_AUDIT_LOGS if log.get("platform") == "Cisco ISE")
     sccm_actions = sum(1 for log in ADMIN_AUDIT_LOGS if log.get("platform") == "SCCM")
+    jamf_actions = sum(1 for log in ADMIN_AUDIT_LOGS if log.get("platform") == "Jamf")
     
     return {
         "status": "success",
@@ -573,6 +583,7 @@ def get_system_glimpse(user=Depends(get_session_user)):
                 "ad_actions": ad_actions,
                 "ise_actions": ise_actions,
                 "sccm_actions": sccm_actions,
+                "jamf_actions": jamf_actions,
                 "total_logs": len(ADMIN_AUDIT_LOGS)
             }
         }

@@ -135,9 +135,10 @@
           </div>
         </div>
       </div>
-      <div class="directory-search-bar">
-        <input type="text" id="dirSearchInput" placeholder="🔍 Search by Name, StarID, or Email..." onkeydown="if(event.key==='Enter') searchDirectoryTab()"/>
-        <button class="btn-primary" onclick="searchDirectoryTab()">Search</button>
+      <div class="module-search-row">
+        <div class="ai-sparkle">📇</div>
+        <input type="text" id="dirSearchInput" placeholder="AI Command: 'Find StarID for Shadman' or search by Name/Email..." onkeydown="if(event.key==='Enter') searchDirectoryTab()"/>
+        <button class="ai-cmd-btn" onclick="searchDirectoryTab()">🔍 Search</button>
       </div>
       <div class="directory-results" id="directoryResults">
         <div class="ticket-placeholder">
@@ -158,9 +159,9 @@
         </div>
       </div>
       <div class="module-search-row">
-        <span class="search-icon">💻</span>
-        <input type="text" id="sccmSearchInput" placeholder="Search PC Name, Device Name, or MAC..." onkeydown="if(event.key==='Enter') searchSCCMTab()"/>
-        <button onclick="searchSCCMTab()">🔍 Search PC</button>
+        <div class="ai-sparkle">💻</div>
+        <input type="text" id="sccmSearchInput" placeholder="AI Command: 'Search SCCM for 3R55ST3' or 'Find PC wagahsan'..." onkeydown="if(event.key==='Enter') searchSCCMTab()"/>
+        <button class="ai-cmd-btn" onclick="searchSCCMTab()">🔍 Search PC</button>
       </div>
       <div class="directory-results" id="sccmResults">
         <div class="ticket-placeholder">
@@ -182,9 +183,9 @@
         </div>
       </div>
       <div class="module-search-row">
-        <span class="search-icon">📡</span>
-        <input type="text" id="mistSearchInput" placeholder="Enter MAC Address (e.g. 00:11:22:33:44:55)..." onkeydown="if(event.key==='Enter') searchMistTab()"/>
-        <button onclick="searchMistTab()">🔍 Lookup Client</button>
+        <div class="ai-sparkle">📡</div>
+        <input type="text" id="mistSearchInput" placeholder="AI Command: 'Lookup MAC 08-8F-C3-06-FD-F9' or enter any MAC address..." onkeydown="if(event.key==='Enter') searchMistTab()"/>
+        <button class="ai-cmd-btn" onclick="searchMistTab()">🔍 Lookup Client</button>
       </div>
       <div class="directory-results" id="mistResults">
         <div class="ticket-placeholder">
@@ -209,14 +210,41 @@
         </a>
       </div>
       <div class="module-search-row">
-        <span class="search-icon">🛡️</span>
-        <input type="text" id="iseSearchInput" placeholder="Enter MAC Address or StarID (e.g. wagahsan)..." onkeydown="if(event.key==='Enter') searchIseTab()"/>
-        <button onclick="searchIseTab()">🔍 Lookup Session</button>
+        <div class="ai-sparkle">🛡️</div>
+        <input type="text" id="iseSearchInput" placeholder="AI Command: 'Check ISE for wagahsan' or enter MAC address..." onkeydown="if(event.key==='Enter') searchIseTab()"/>
+        <button class="ai-cmd-btn" onclick="searchIseTab()">🔍 Lookup Session</button>
       </div>
       <div class="directory-results" id="iseResults">
         <div class="ticket-placeholder">
           <div class="placeholder-icon">🛡️</div>
           <h3>Enter a MAC Address or StarID to query active Cisco ISE security policies</h3>
+        </div>
+      </div>
+    </section>
+    
+    <!-- JAMF CLOUD APPLE MANAGEMENT VIEW -->
+    <section class="view" id="view-jamf">
+      <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+        <div style="display:flex; align-items:center; gap:20px;">
+          <div style="font-size:40px; background:rgba(239,68,68,0.1); width:80px; height:80px; border-radius:20px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(239,68,68,0.2);">🍎</div>
+          <div>
+            <h1 style="margin:0;">Jamf Cloud Management</h1>
+            <p style="margin:5px 0 0;">Unified inventory and security management for SMSU Apple iPads, MacBooks, and iPhones.</p>
+          </div>
+        </div>
+        <a href="https://smsu.jamfcloud.com/" target="_blank" class="btn-primary" style="background:#ef4444; text-decoration:none; display:flex; align-items:center; gap:8px; font-weight:700;">
+          🍎 Launch Jamf Dashboard
+        </a>
+      </div>
+      <div class="module-search-row">
+        <div class="ai-sparkle">🍎</div>
+        <input type="text" id="jamfSearchInput" placeholder="AI Command: 'Find iPad CART-12' or enter Serial/Name..." onkeydown="if(event.key==='Enter') searchJamfTab()"/>
+        <button class="ai-cmd-btn" onclick="searchJamfTab()">🔍 Search Apple Device</button>
+      </div>
+      <div class="directory-results" id="jamfResults">
+        <div class="ticket-placeholder">
+          <div class="placeholder-icon">🍎</div>
+          <h3>Enter a Serial Number, Device Name, or User to query Jamf Cloud</h3>
         </div>
       </div>
     </section>
@@ -227,8 +255,9 @@
         <h1>FAQ Library</h1>
         <p>Browse all 49 service categories from your resolved tickets.</p>
       </div>
-      <div class="faq-search-bar">
-        <input type="text" id="faqSearch" placeholder="🔍 Search FAQs..." oninput="filterFAQ()"/>
+      <div class="module-search-row">
+        <div class="ai-sparkle">✨</div>
+        <input type="text" id="faqSearch" placeholder="AI Command: 'Search FAQs for WiFi' or browse categories..." oninput="filterFAQ()"/>
       </div>
       <div class="faq-filters" id="faqFilters"></div>
       <div class="faq-grid" id="faqGrid"></div>
@@ -284,8 +313,9 @@
       </div>
       <div class="wayfinding-container">
         <div class="wayfinding-sidebar">
-          <div class="search-box">
-            <input type="text" id="mapSearchInput" placeholder="Search building or floor..." oninput="filterMaps()">
+          <div class="module-search-row" style="margin: 0 0 16px;">
+            <div class="ai-sparkle">✨</div>
+            <input type="text" id="mapSearchInput" placeholder="Search building/floor..." oninput="filterMaps()">
           </div>
           <div class="map-list" id="mapList">
             <!-- Populated by JS -->
@@ -341,7 +371,7 @@
             <div class="stat-card-premium" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
               <div class="stat-label">PLATFORM OPERATIONS</div>
               <div class="stat-value" id="glimpseTotalActions">0</div>
-              <div class="stat-sub">AD, ISE & SCCM Total Logged</div>
+              <div class="stat-sub">AD, ISE, SCCM & Jamf Total Logged</div>
               <div class="stat-icon">⚡</div>
             </div>
           </div>
@@ -401,6 +431,11 @@
             <div class="integration-item">
               <label style="font-size: 12px; font-weight: 700; color: var(--accent2);">AI Orchestrator (Ollama)</label>
               <input type="text" id="conf_ai_url" placeholder="http://localhost:11434" style="width: 100%; margin-top: 5px;" />
+            </div>
+            <div class="integration-item">
+              <label style="font-size: 12px; font-weight: 700; color: var(--accent2);">Jamf Cloud API</label>
+              <input type="text" id="conf_jamf_url" placeholder="https://smsu.jamfcloud.com" style="width: 100%; margin-top: 5px;" />
+              <input type="password" id="conf_jamf_token" placeholder="Bearer Token / API Key" style="width: 100%; margin-top: 5px;" />
             </div>
           </div>
           <button class="btn-primary" style="margin-top:20px; width:100%;" onclick="saveSystemConfig()">Save All Integrations</button>

@@ -344,48 +344,49 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
     border-color: var(--red);
 }
 
-/* ===== GLOBAL MODULE SEARCH BAR ===== */
+/* ===== GLOBAL MODULE SEARCH BAR (matches .ai-command-bar style) ===== */
 /* Used by SCCM, Mist, AD, Maps, and ISE tabs */
 .module-search-row {
-  display: flex; gap: 10px; align-items: center;
-  padding: 10px 14px;
-  background: rgba(255,255,255,0.04);
-  border: 1.5px solid var(--border);
-  border-radius: 14px;
-  backdrop-filter: blur(10px);
-  transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
-  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 32px 20px;
+  background: var(--bg2);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 6px 14px;
+  box-shadow: 0 0 18px rgba(99, 102, 241, 0.12);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
 }
 .module-search-row:focus-within {
-  border-color: var(--accent);
-  background: rgba(99,102,241,0.06);
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 6px 24px rgba(0,0,0,0.2);
-  transform: translateY(-1px);
+  border-color: var(--accent2);
+  box-shadow: 0 0 24px rgba(99, 102, 241, 0.25);
 }
 .module-search-row input {
   flex: 1; background: transparent; border: none;
-  color: var(--text); font-size: 14.5px; outline: none; padding: 4px 0;
+  color: var(--text); font-size: 13.5px; outline: none;
+  padding: 10px 0;
+  font-family: 'Inter', sans-serif;
 }
-.module-search-row input::placeholder { color: var(--text2); opacity: 0.6; }
-.module-search-row .search-icon { font-size: 16px; opacity: 0.5; flex-shrink: 0; }
+.module-search-row input::placeholder { color: var(--text2); opacity: 0.7; }
+.module-search-row .search-icon { 
+  font-size: 16px; flex-shrink: 0;
+  animation: glow 2s infinite alternate;
+}
 .module-search-row button {
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  color: #fff; border: none;
-  border-radius: 10px; padding: 9px 20px; font-size: 13px;
-  font-weight: 700; cursor: pointer; 
-  transition: all 0.25s cubic-bezier(0.165, 0.84, 0.44, 1); 
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 8px; padding: 7px 18px; font-size: 12.5px;
+  font-weight: 600; cursor: pointer; 
+  transition: all 0.2s ease;
   white-space: nowrap;
-  letter-spacing: 0.3px;
-  box-shadow: 0 4px 14px rgba(99,102,241,0.3);
+  letter-spacing: 0.2px;
 }
-.module-search-row button:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 8px 20px rgba(99,102,241,0.45);
+.module-search-row button:hover { 
+  background: var(--accent2); 
+  box-shadow: 0 0 12px var(--accent);
 }
 .module-search-row button:active {
-  transform: translateY(0) scale(0.98);
-  box-shadow: 0 2px 8px rgba(99,102,241,0.3);
+  transform: scale(0.97);
 }
+
 
 /* --- DIRECTORY TAB --- */
 .directory-search-bar {

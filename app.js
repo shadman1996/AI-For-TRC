@@ -1082,6 +1082,71 @@ async function searchMistTab() {
   }
 }
 
+// ----- JAMF TAB LOGIC -----
+async function searchJamfTab() {
+  const input = document.getElementById('jamfSearchInput');
+  const query = input.value.trim();
+  if (!query) return;
+
+  const resultsEl = document.getElementById('jamfResults');
+  resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Querying Jamf Cloud Inventory...</h3></div>';
+
+  try {
+    const res = await fetch(`/api/jamf/${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if (data.status === 'success' && data.data) {
+      renderJamfResults(data.data);
+    } else {
+      resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ No Apple devices found matching "${query}"</h3></div>`;
+    }
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="ticket-placeholder"><h3>❌ Error connecting to Jamf Cloud</h3></div>';
+  }
+}
+
+function renderJamfResults(devices) {
+  const container = document.getElementById('jamfResults');
+  if (!devices || devices.length === 0) {
+    container.innerHTML = '<div class="ticket-placeholder"><h3>No Apple devices found</h3></div>';
+    return;
+  }
+  
+  let html = `<div class="directory-grid">`;
+  devices.forEach(dev => {
+    const isMac = dev.Model.toLowerCase().includes('mac');
+    const icon = isMac ? '💻' : '📱';
+    
+    html += `
+      <div class="premium-module-card">
+        <div class="pm-header">
+          <div class="pm-avatar" style="background:#ef4444;">${icon}</div>
+          <div class="pm-title-area">
+            <div class="pm-name">${dev.Name}</div>
+            <div class="pm-sub">${dev.User || 'Assigned Student/Staff'}</div>
+          </div>
+          <div class="pm-status-pill online">Managed</div>
+        </div>
+        <div class="pm-body">
+          <div class="pm-info-block">
+             <div class="pm-info-row"><span class="pm-label">🛠️ Model</span><span class="pm-value">${dev.Model}</span></div>
+             <div class="pm-info-row"><span class="pm-label">🖥️ OS Version</span><span class="pm-value">${dev.OSVersion}</span></div>
+             <div class="pm-info-row"><span class="pm-label">🌐 IP Address</span><span class="pm-value">${dev.IPAddress}</span></div>
+             <div class="pm-info-row"><span class="pm-label">🕒 Last Contact</span><span class="pm-value">${dev.LastContact}</span></div>
+          </div>
+        </div>
+        <div class="pm-action-bar">
+          <button class="pm-btn primary" onclick="window.open('https://smsu.jamfcloud.com/')" style="background:#ef4444;">🍎 Open in Jamf</button>
+          <button class="pm-btn secondary" onclick="showToast('Remote Lock initiated via HITL', 'warning')">🔒 Remote Lock</button>
+        </div>
+      </div>
+    `;
+  });
+  
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+
 function renderDirectoryResults(results) {
   const container = document.getElementById('directoryResults');
   if (!results || results.length === 0) {
@@ -2434,6 +2499,8 @@ async function loadSystemConfig() {
       if (conf.mist_org) document.getElementById('conf_mist_org').value = conf.mist_org;
       if (conf.mist_token) document.getElementById('conf_mist_token').value = conf.mist_token;
       if (conf.ai_url) document.getElementById('conf_ai_url').value = conf.ai_url;
+      if (conf.jamf_url) document.getElementById('conf_jamf_url').value = conf.jamf_url;
+      if (conf.jamf_token) document.getElementById('conf_jamf_token').value = conf.jamf_token;
     }
   } catch (e) {}
 }
@@ -2445,7 +2512,9 @@ async function saveSystemConfig() {
     sccm_url: document.getElementById('conf_sccm_url').value,
     mist_org: document.getElementById('conf_mist_org').value,
     mist_token: document.getElementById('conf_mist_token').value,
-    ai_url: document.getElementById('conf_ai_url').value
+    ai_url: document.getElementById('conf_ai_url').value,
+    jamf_url: document.getElementById('conf_jamf_url').value,
+    jamf_token: document.getElementById('conf_jamf_token').value
   };
 
   try {
@@ -3098,10 +3167,16 @@ async function loadSysAdminGlimpse() {
       platformChart = new Chart(ctxP, {
         type: 'doughnut',
         data: {
-          labels: ['AD', 'ISE', 'SCCM', 'System'],
+          labels: ['AD', 'ISE', 'SCCM', 'Jamf', 'System'],
           datasets: [{
-            data: [g.metrics.ad_actions, g.metrics.ise_actions, g.metrics.sccm_actions, g.metrics.total_logs - (g.metrics.ad_actions + g.metrics.ise_actions + g.metrics.sccm_actions)],
-            backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#6366f1'],
+            data: [
+              g.metrics.ad_actions, 
+              g.metrics.ise_actions, 
+              g.metrics.sccm_actions, 
+              g.metrics.jamf_actions, 
+              g.metrics.total_logs - (g.metrics.ad_actions + g.metrics.ise_actions + g.metrics.sccm_actions + g.metrics.jamf_actions)
+            ],
+            backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#ef4444', '#6366f1'],
             borderWidth: 0,
             hoverOffset: 15
           }]
