@@ -1,5 +1,5 @@
 # TRC Enterprise AI Help Desk — Project Summary
-### For: [Manager Name] | Prepared by: Shadman Ahsan | Date: May 2026
+### For: [Kingstrom, Jason] | Prepared by: Shadman Ahsan | Date: May 2026
 
 ---
 
@@ -57,28 +57,27 @@ Staff can type `"Check AD for [username]"` and instantly see:
 
 This eliminates the need to open and navigate the AD console for routine lookups.
 
-### 3. SCCM Device Lookup
-Staff can type `"Find computer [device name]"` and see:
-- Last logged-in user
-- IP and MAC addresses
-- Operating system version
-- Device status
+### 3. SCCM Device Lookup & Remote Management
+Staff can type `"Find computer [device name]"` and instantly see:
+- **Enriched Telemetry**: Last logged-in user, Serial Number, Manufacturer, Client Version, and AD Site.
+- **Advanced Actions**: Trigger Policy Sync, Scan for Updates, or perform a **Force Reboot** directly from the dashboard.
+- **Integrated Control**: Launch Remote Desktop (RDP) or Remote Assistance (MSRA) sessions with one click.
 
 Connects securely via the SCCM AdminService REST API over HTTPS on the internal network.
 
 ### 4. Juniper Mist WiFi Diagnostics
-Staff can type `"Check Mist for [MAC address]"` and see:
-- Device hostname and type
-- Connected SSID
-- IP address
-- Authentication method (PSK, SSID, VLAN)
-- Connection band and protocol
+### 5. Intelligent Device Tracking & Cross-Platform Intelligence
+The AI assistant now performs deep, cross-platform resolution:
+- **Identity Correlation**: Resolves Asset Tags to specific Owners and Departments via TDX.
+- **Location Intelligence**: Maps MAC addresses to specific **Access Points** (WiFi) or **Switch Ports** (Wired) via Mist/ISE.
+- **Signal Tracking**: Reports live Signal Strength (RSSI) to help physically locate devices on campus.
+- **Intelligent Context**: When a PC name is mentioned in chat, the AI automatically fetches its user, department, and network location as a background "Fact".
 
-### 5. Intelligent Knowledge Base
+### 6. Intelligent Knowledge Base
 The AI has two layers of knowledge:
-- **Built-in FAQ library** — 49+ service categories based on historical ticket patterns
-- **Permanent Memory** — Administrators can teach the AI new knowledge by typing `"Learn this: [information]"` or uploading files directly into the chat interface
-- The AI automatically searches this memory before admitting it doesn't know something
+- **Built-in FAQ library** — 49+ service categories based on historical ticket patterns.
+- **Permanent Memory** — Administrators can teach the AI new knowledge by typing `"Learn this: [information]"` or uploading files directly into the chat interface.
+- The AI automatically searches this memory before admitting it doesn't know something.
 
 ### 6. Self-Learning File Ingestion
 Administrators can drag-and-drop any CSV, TXT, or JSON file (such as a TDX KB export) directly into the chat window. The system automatically:
@@ -93,7 +92,13 @@ Staff log in via StarID. The system assigns one of four roles with granular perm
 - **WAG**: Above + elevated AD options.
 - **System Admin**: Full access + Admin Panel for role management, KB ingestion, and **Deployment Monitoring**.
 
-### 8. Network Deployment Toolkit
+### 9. Premium SysAdmin Command Center (v3.5.0)
+The administrative modules have been fully redesigned with a **Premium Glassmorphic UI**:
+- **High-Density Dashboards**: Real-time infrastructure telemetry (AD/ISE/SCCM distribution) and system vitals (AI Engine status, technically active sessions).
+- **Professional Aesthetics**: Clean, profile-style cards for users and devices with visual signal bars and status pills.
+- **Action-Oriented Design**: Administrative buttons are seamlessly docked for immediate operational response.
+
+### 10. Network Deployment Toolkit
 Administrators can now deploy the tool across the campus LAN with one click:
 - **Auto-Discovery**: The system automatically detects the server's network IP address.
 - **Firewall Setup**: Includes a `setup_firewall.bat` script to securely open the port for WAG and Help Desk staff.

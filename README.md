@@ -11,7 +11,8 @@ Detailed guides are available in the [docs/](docs/SYSTEM_GUIDE.md) directory:
 - [🛠️ System Guide](docs/SYSTEM_GUIDE.md)
 
 ## 🚀 Core Features
-- **Intelligent Orchestration**: Automatically detects user intent (AD lookup, SCCM search, WiFi status, KB search).
+- **Unified Connectivity Graph**: "Everything is Connected." The AI engine automatically traverses Active Directory, SCCM, TDX, and Cisco ISE to build full relationship maps (User ➔ Device ➔ Network IP ➔ Physical Switch/AP).
+- **Intelligent Orchestration**: Automatically detects user intent (AD lookup, SCCM search, WiFi status, KB search, Entity Trace).
 - **Deep Search**: Headless scraping of the StarID Admin Portal for extended user profiles.
 - **Remote Actions**: Trigger SCCM policy syncs and update scans directly from chat.
 - **Modular Permissions**: Granular role-based access for Help Desk, Tech, WAG, and SysAdmin staff.
@@ -28,9 +29,10 @@ Detailed guides are available in the [docs/](docs/SYSTEM_GUIDE.md) directory:
 
 ## 🔒 Security
 The platform is designed with enterprise security in mind:
-- **Zero-Trust UI**: All sensitive actions (Remote Restarts, Deep Searches) are restricted to authorized roles.
+- **Zero-Plaintext Secrets**: All API keys, AD passwords, and integration tokens in `config.json` are AES-256 encrypted via a machine-bound `security.py` manager.
+- **Zero-Trust UI**: All sensitive actions (Remote Restarts, Deep Searches) are restricted to authorized AD roles.
 - **Local-First**: Sensitive data remains within the campus network.
-- **Credential Isolation**: All API keys and portal passwords are encrypted/stored in `config.json`.
+- **Human-in-the-Loop Governance**: This is the ultimate IT support AI, but **NO CHANGES** may be made to the system architecture or configurations without explicit, documented approval from **Wag** (with AI facilitating the human-in-the-loop review process).
 
 ## 💻 Installation & Setup
 

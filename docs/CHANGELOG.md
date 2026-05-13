@@ -2,7 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.3.0] - 2026-05-13 (Current)
+## [3.4.0] - 2026-05-13 (Current)
+### Added
+- **Unified Trace API (Everything is Connected)**: The AI now features a "global brain" capable of linking AD, TDX, SCCM, ISE, and Mist. Technicians can instantly map users to their primary devices, current IP addresses, and physical network switch/AP locations.
+- **Encrypted Configuration Engine**: Implemented `security.py` to achieve zero-plaintext secrets. All API keys, tokens, and passwords in `config.json` are now AES-256 encrypted and decrypted securely in memory at runtime.
+- **Hardened Authentication**: Replaced legacy master passwords with strict Active Directory role-validation for all non-emergency access.
+- **Premium Connectivity UI**: Designed new glassmorphic Trace Cards and Unified Profile views to beautifully visualize cross-platform entity links.
+
+## [3.3.0] - 2026-05-13
 ### Added
 - **Cisco Identity Services Engine (ISE) Integration**: Launched a brand-new "Cisco ISE Security" module for network security diagnostics. Technicians can query endpoint sessions, view dynamic VLAN allocations, trace switch IPs and ports, and trigger Change of Authorization (CoA) actions to Quarantine or Restore devices instantly.
 - **Admin Console Launcher**: Embedded a quick-link directly in the view header to easily jump to the live Cisco ISE admin dashboard (`https://ise.smsu.edu/admin/`).

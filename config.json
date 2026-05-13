@@ -6,31 +6,120 @@
   },
   "starid_admin": {
     "username": "vg6340ah",
-    "password": "Temp@2026!!"
+    "password": "ENC(gAAAAABqBL6FZnaR6Fb-a6T6vxggmLwBOSBOF_0j1vwNAJCpQRc-YylWi4beuS2dBM9H6R9N1MFUfUj_BCDufBbf2Y7PuK2i5w==)"
   },
   "cisco_ise": {
     "host": "ise.smsu.edu",
     "username": "ise_admin",
-    "password": "IseSecurePassword2026!"
+    "password": "ENC(gAAAAABqBL6F6EXyI8dAKyFmjMgwx1nk2CR-KrLU9-PcEbAOvX4Bvk4iolgPF9SlNk2rfo-QDYlkgD9lySso9gBOdH6xENGSo6eQaL_TdjW6bQiiMbkboaw=)"
   },
   "modules": [
-    { "id": "chat", "name": "AI Assistant", "icon": "🤖" },
-    { "id": "tickets", "name": "My Tickets", "icon": "🎫" },
-    { "id": "directory", "name": "Directory", "icon": "📇" },
-    { "id": "sccm", "name": "SCCM Tools", "icon": "💻" },
-    { "id": "ad", "name": "AD & User Management", "icon": "🔑" },
-    { "id": "mist", "name": "Mist WiFi", "icon": "📶" },
-    { "id": "ise", "name": "Cisco ISE Security", "icon": "🛡️" },
-    { "id": "form", "name": "TDX Form Guide", "icon": "📋" },
-    { "id": "links", "name": "Quick Links", "icon": "🔗" },
-    { "id": "wayfinding", "name": "Wayfinding", "icon": "🗺️" },
-    { "id": "settings", "name": "Appearance Settings", "icon": "🎨" }
+    {
+      "id": "chat",
+      "name": "AI Assistant",
+      "icon": "\ud83e\udd16"
+    },
+    {
+      "id": "tickets",
+      "name": "My Tickets",
+      "icon": "\ud83c\udfab"
+    },
+    {
+      "id": "directory",
+      "name": "Directory",
+      "icon": "\ud83d\udcc7"
+    },
+    {
+      "id": "sccm",
+      "name": "SCCM Tools",
+      "icon": "\ud83d\udcbb"
+    },
+    {
+      "id": "ad",
+      "name": "AD & User Management",
+      "icon": "\ud83d\udd11"
+    },
+    {
+      "id": "mist",
+      "name": "Mist WiFi",
+      "icon": "\ud83d\udcf6"
+    },
+    {
+      "id": "ise",
+      "name": "Cisco ISE Security",
+      "icon": "\ud83d\udee1\ufe0f"
+    },
+    {
+      "id": "form",
+      "name": "TDX Form Guide",
+      "icon": "\ud83d\udccb"
+    },
+    {
+      "id": "links",
+      "name": "Quick Links",
+      "icon": "\ud83d\udd17"
+    },
+    {
+      "id": "wayfinding",
+      "name": "Wayfinding",
+      "icon": "\ud83d\uddfa\ufe0f"
+    },
+    {
+      "id": "settings",
+      "name": "Appearance Settings",
+      "icon": "\ud83c\udfa8"
+    }
   ],
   "default_module_permissions": {
-    "guest": ["chat", "directory", "wayfinding", "links"],
-    "helpdesk": ["chat", "tickets", "directory", "form", "links", "wayfinding"],
-    "tech": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ise", "wayfinding"],
-    "wag": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ise", "ad", "wayfinding"],
-    "sysadmin": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ise", "ad", "settings", "wayfinding"]
+    "guest": [
+      "chat",
+      "directory",
+      "wayfinding",
+      "links"
+    ],
+    "helpdesk": [
+      "chat",
+      "tickets",
+      "directory",
+      "form",
+      "links",
+      "wayfinding"
+    ],
+    "tech": [
+      "chat",
+      "tickets",
+      "directory",
+      "form",
+      "links",
+      "sccm",
+      "mist",
+      "ise",
+      "wayfinding"
+    ],
+    "wag": [
+      "chat",
+      "tickets",
+      "directory",
+      "form",
+      "links",
+      "sccm",
+      "mist",
+      "ise",
+      "ad",
+      "wayfinding"
+    ],
+    "sysadmin": [
+      "chat",
+      "tickets",
+      "directory",
+      "form",
+      "links",
+      "sccm",
+      "mist",
+      "ise",
+      "ad",
+      "settings",
+      "wayfinding"
+    ]
   }
 }

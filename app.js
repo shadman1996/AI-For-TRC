@@ -255,6 +255,7 @@ function switchView(viewId) {
   if (viewId === 'ad') {
     fetchDeploymentInfo();
     loadAuditLogs();
+    loadSysAdminGlimpse();
   }
 }
 
@@ -619,6 +620,27 @@ async function checkEnterpriseTools(text) {
     return true;
   }
 
+  // Unified Trace Intent (Who is connected to, Where is, Trace, Connection status)
+  const isTraceIntent = lower.includes("connected to") || lower.includes("where is") || lower.startsWith("trace ") || lower.includes("connection status") || lower.includes("link between");
+  
+  if (isTraceIntent) {
+    let query = text.replace(/connected to|where is|trace|connection status|link between/gi, "").trim();
+    if (query.length > 2) {
+      appendMessage(`🔗 **Analyzing Unified Connectivity Graph for:** *${query}*...`, 'ai');
+      try {
+        const token = currentUser ? currentUser.token : '';
+        const res = await fetch(`/api/trace/${encodeURIComponent(query)}?token=${token}`);
+        const data = await res.json();
+        if (data.status === "success") {
+          renderTraceResponse(data.data);
+        } else {
+          appendMessage(`Trace failed: ${data.message}`, 'ai');
+        }
+      } catch (e) { appendMessage("Error connecting to connectivity engine.", 'ai'); }
+      return true;
+    }
+  }
+
   // Auto-Detect StarID or Search Intent (Find, Who is, Lookup, Deep Search)
   const starIdMatch = text.match(/\b[a-z]{2}[0-9]{4}[a-z]{2}\b/i);
   const isDeepSearch = lower.startsWith("deep search") || lower.startsWith("scrape") || lower.includes("portal search");
@@ -976,8 +998,6 @@ async function searchSCCMTab() {
             `;
           }
         } catch (mistErr) {
-          resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ Device not found in SCCM</h3></div>`;
-        }
       } else {
         resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ ${data.message}</h3></div>`;
       }
@@ -987,31 +1007,48 @@ async function searchSCCMTab() {
   }
 }
 
-function renderSCCMResults(devices) {
+function renderSCCMResults(pcs) {
   const container = document.getElementById('sccmResults');
-  let html = `<div class="directory-grid">`;
+  if (!pcs || pcs.length === 0) {
+    container.innerHTML = '<div class="ticket-placeholder"><h3>No PCs found matching this query</h3></div>';
+    return;
+  }
   
-  devices.forEach(pc => {
-    const onlineStatus = pc.Status === 'Online' ? 'unlocked' : 'locked';
+  let html = `<div class="directory-grid">`;
+  pcs.forEach(pc => {
+    const isOnline = pc.Status === 'Online';
+    const statusClass = isOnline ? 'online' : 'offline';
+    
     html += `
-      <div class="sccm-card">
-        <div class="dir-card-header">
-          <div class="dir-avatar" style="background:var(--accent2);">💻</div>
-          <div class="dir-main-info">
-            <div class="dir-name">${pc.PCName}</div>
-            <div class="dir-starid">${pc.User || 'No User'}</div>
+      <div class="premium-module-card" style="min-width: 380px;">
+        <div class="pm-header">
+          <div class="pm-avatar" style="background:var(--accent2);">💻</div>
+          <div class="pm-title-area">
+            <div class="pm-name">${pc.PCName}</div>
+            <div class="pm-sub">${pc.User || 'System Managed'}</div>
           </div>
-          <div class="dir-status ${onlineStatus}">${pc.Status}</div>
+          <div class="pm-status-pill ${statusClass}">${pc.Status}</div>
         </div>
-        <div class="dir-body">
-          <div class="dir-item"><strong>Model:</strong> ${pc.Model}</div>
-          <div class="dir-item"><strong>Last Seen:</strong> ${pc.LastSeen}</div>
-          <div class="dir-item"><strong>IP:</strong> ${pc.IPAddress}</div>
+        <div class="pm-body" style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+          <div class="pm-info-block">
+             <div class="pm-info-row"><span class="pm-label">🛠️ Model</span><span class="pm-value">${pc.Model}</span></div>
+             <div class="pm-info-row"><span class="pm-label">🏭 Maker</span><span class="pm-value">${pc.Manufacturer || 'N/A'}</span></div>
+             <div class="pm-info-row"><span class="pm-label">🆔 Serial</span><span class="pm-value">${pc.SerialNumber || 'N/A'}</span></div>
+          </div>
+          <div class="pm-info-block">
+             <div class="pm-info-row"><span class="pm-label">🕒 Seen</span><span class="pm-value">${pc.LastSeen}</span></div>
+             <div class="pm-info-row"><span class="pm-label">🌐 IP</span><span class="pm-value">${pc.IPAddress}</span></div>
+             <div class="pm-info-row"><span class="pm-label">📦 Client</span><span class="pm-value">${pc.ClientVersion || 'N/A'}</span></div>
+             <div class="pm-info-row"><span class="pm-label">🏰 Site</span><span class="pm-value">${pc.ADSite || 'N/A'}</span></div>
+          </div>
         </div>
-        <div class="remote-actions-bar" style="margin-top:10px;">
-           <button class="remote-btn" onclick="triggerRemoteAction('${pc.PCName}', 'Sync Policy', this, '${pc.ResourceID}')">🔄 Sync</button>
-           <button class="remote-btn" onclick="triggerRemoteAction('${pc.PCName}', 'Scan Updates', this, '${pc.ResourceID}')">🔍 Scan</button>
-           <button class="remote-btn" onclick="triggerRemoteAction('${pc.PCName}', 'Evaluate Updates', this, '${pc.ResourceID}')">🚀 Eval</button>
+        <div class="pm-action-bar" style="flex-wrap: wrap;">
+          <button class="pm-btn primary" onclick="triggerRemoteAction('${pc.PCName}', 'Sync Policy', this, '${pc.ResourceID}')" title="Sync Policy">🔄 Sync</button>
+          <button class="pm-btn secondary" onclick="triggerRemoteAction('${pc.PCName}', 'Scan Updates', this, '${pc.ResourceID}')" title="Scan Updates">🔍 Scan</button>
+          <button class="pm-btn secondary" onclick="triggerRemoteAction('${pc.PCName}', 'Evaluate Updates', this, '${pc.ResourceID}')" title="Eval Updates">🚀 Eval</button>
+          <button class="pm-btn secondary" onclick="window.open('rdp://${pc.PCName}')" title="Remote Desktop">🖥️ RDP</button>
+          <button class="pm-btn secondary" onclick="window.open('ms-ra:ms-assistance?requestee=${pc.PCName}')" title="Remote Assistance">🤝 MSRA</button>
+          <button class="pm-btn danger" onclick="triggerRemoteAction('${pc.PCName}', 'Reboot', this, '${pc.ResourceID}')" title="Force Reboot">♻️ Reboot</button>
         </div>
       </div>
     `;
@@ -1043,6 +1080,57 @@ async function searchMistTab() {
   }
 }
 
+function renderDirectoryResults(results) {
+  const container = document.getElementById('directoryResults');
+  if (!results || results.length === 0) {
+    container.innerHTML = '<div class="ticket-placeholder"><h3>No matches found in the directory</h3></div>';
+    return;
+  }
+  
+  let html = `<div class="directory-grid">`;
+  results.forEach(person => {
+    const avatarColor = person.Source.includes('StarID') ? '#3b82f6' : '#6366f1';
+    const initials = person.FullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    
+    html += `
+      <div class="premium-module-card">
+        <div class="pm-header">
+          <div class="pm-avatar" style="background:${avatarColor};">${initials}</div>
+          <div class="pm-title-area">
+            <div class="pm-name">${person.FullName}</div>
+            <div class="pm-sub">${person.Title || 'Staff Member'}</div>
+          </div>
+          <div class="pm-status-pill online">ACTIVE</div>
+        </div>
+        <div class="pm-body">
+          <div class="pm-info-row">
+            <span class="pm-label">🆔 StarID</span>
+            <span class="pm-value">${person.StarID}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">🏢 Dept</span>
+            <span class="pm-value">${person.Department || 'N/A'}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">📍 Location</span>
+            <span class="pm-value">${person.Location} - ${person.Room}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">📧 Email</span>
+            <span class="pm-value">${person.PrimaryEmail}</span>
+          </div>
+        </div>
+        <div class="pm-action-bar">
+          <button class="pm-btn secondary" onclick="openUnifiedProfile('${person.StarID}')">👤 View Profile</button>
+          <button class="pm-btn primary" onclick="copyToClipboard('${person.PrimaryEmail}')">📋 Copy Email</button>
+        </div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
 function renderMistResults(clients) {
   const container = document.getElementById('mistResults');
   if (!clients || clients.length === 0) {
@@ -1052,21 +1140,48 @@ function renderMistResults(clients) {
   
   let html = `<div class="directory-grid">`;
   clients.forEach(client => {
+    // Calculate signal bar color
+    const rssi = parseInt(client.rssi);
+    let signalColor = '#ef4444'; // Red
+    if (rssi > -60) signalColor = '#10b981'; // Green
+    else if (rssi > -80) signalColor = '#f59e0b'; // Orange
+    
     html += `
-      <div class="directory-card">
-        <div class="dir-card-header">
-          <div class="dir-avatar" style="background:#4f46e5;">📶</div>
-          <div class="dir-main-info">
-            <div class="dir-name">${client.hostname || 'Unknown Device'}</div>
-            <div class="dir-starid">${client.mac}</div>
+      <div class="premium-module-card">
+        <div class="pm-header">
+          <div class="pm-avatar" style="background:#4f46e5;">📶</div>
+          <div class="pm-title-area">
+            <div class="pm-name">${client.hostname || 'Mobile Client'}</div>
+            <div class="pm-sub">${client.mac}</div>
           </div>
-          <div class="dir-status unlocked">Connected</div>
+          <div class="pm-status-pill online">CONNECTED</div>
         </div>
-        <div class="dir-body">
-          <div class="dir-item"><strong>AP Name:</strong> ${client.ap_name || 'N/A'}</div>
-          <div class="dir-item"><strong>SSID:</strong> ${client.ssid || 'N/A'}</div>
-          <div class="dir-item"><strong>Signal (RSSI):</strong> ${client.rssi} dBm</div>
-          <div class="dir-item"><strong>IP Address:</strong> ${client.ip || 'N/A'}</div>
+        <div class="pm-body">
+          <div class="pm-info-row">
+            <span class="pm-label">📍 Access Point</span>
+            <span class="pm-value">${client.ap_name || 'Campus WiFi'}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">📡 SSID</span>
+            <span class="pm-value">${client.ssid || 'SMSU-Secure'}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">📶 Signal (RSSI)</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span class="pm-value">${client.rssi} dBm</span>
+              <div class="signal-bar-container">
+                <div class="signal-fill" style="width:${Math.max(10, 100 + rssi)}%; background:${signalColor};"></div>
+              </div>
+            </div>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">🌐 IP Address</span>
+            <span class="pm-value">${client.ip || 'N/A'}</span>
+          </div>
+        </div>
+        <div class="pm-action-bar">
+          <button class="pm-btn secondary" onclick="copyToClipboard('${client.mac}')">📋 Copy MAC</button>
+          <button class="pm-btn primary" onclick="showToast('Initiating connection trace...', 'success')">🔭 Trace Link</button>
         </div>
       </div>
     `;
@@ -1107,32 +1222,43 @@ function renderIseResults(sessions) {
   let html = `<div class="directory-grid">`;
   sessions.forEach(session => {
     const isQuarantined = session.status.toLowerCase() === 'quarantined';
+    const statusClass = isQuarantined ? 'offline' : 'online';
+    
     html += `
-      <div class="directory-card" style="border-top: 4px solid ${isQuarantined ? 'var(--red)' : 'var(--green)'};">
-        <div class="dir-card-header">
-          <div class="dir-avatar" style="background:${isQuarantined ? 'var(--red)' : 'var(--accent)'};">🛡️</div>
-          <div class="dir-main-info">
-            <div class="dir-name">${session.username || 'Dynamic Endpoint'}</div>
-            <div class="dir-starid">${session.mac}</div>
+      <div class="premium-module-card" style="${isQuarantined ? 'border-color:var(--red);' : ''}">
+        <div class="pm-header">
+          <div class="pm-avatar" style="background:${isQuarantined ? 'var(--red)' : 'var(--accent)'};">🛡️</div>
+          <div class="pm-title-area">
+            <div class="pm-name">${session.username || 'Dynamic Endpoint'}</div>
+            <div class="pm-sub">${session.mac}</div>
           </div>
-          <div class="dir-status ${isQuarantined ? 'disabled' : 'unlocked'}" style="text-transform:uppercase; font-weight:700;">
-            ${session.status}
+          <div class="pm-status-pill ${statusClass}">${session.status}</div>
+        </div>
+        <div class="pm-body">
+          <div class="pm-info-row">
+            <span class="pm-label">🛡️ Policy</span>
+            <span class="pm-value" style="color:var(--accent2);">${session.policy}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">🔌 VLAN</span>
+            <span class="pm-value">${session.vlan}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">🏷️ Profile</span>
+            <span class="pm-value">${session.profile}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">🔗 Access Point</span>
+            <span class="pm-value">${session.ap || 'Wired Link'}</span>
+          </div>
+          <div class="pm-info-row">
+            <span class="pm-label">📍 Switch / Port</span>
+            <span class="pm-value">${session.switch_ip} : ${session.switch_port}</span>
           </div>
         </div>
-        <div class="dir-body" style="margin-bottom:15px;">
-          <div class="dir-item"><strong>Active Policy Profile:</strong> <span style="color:var(--accent2); font-weight:600;">${session.policy}</span></div>
-          <div class="dir-item"><strong>Dynamic VLAN Assignment:</strong> <span style="font-weight:700; color:#fff;">${session.vlan}</span></div>
-          <div class="dir-item"><strong>Endpoint Profiling Tag:</strong> <span>${session.profile}</span></div>
-          <div class="dir-item"><strong>Access Point (AP):</strong> <span>${session.ap || 'Wired Connection'}</span></div>
-          <div class="dir-item"><strong>Switch Location:</strong> <span>IP: ${session.switch_ip} (Port: ${session.switch_port})</span></div>
-        </div>
-        <div class="dir-footer" style="display:flex; gap:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
-          <button class="btn-small" onclick="triggerIseAction('${session.mac}', '${session.username}', 'reauthorize')" style="flex:1; background:rgba(34,197,94,0.1); border:1px solid var(--green); color:var(--green); cursor:pointer; font-weight:700; padding: 6px 12px; border-radius: 6px;">
-            ⚡ Restore / CoA
-          </button>
-          <button class="btn-small btn-danger" onclick="triggerIseAction('${session.mac}', '${session.username}', 'quarantine')" style="flex:1; cursor:pointer; font-weight:700; padding: 6px 12px; border-radius: 6px;">
-            🛡️ Quarantine
-          </button>
+        <div class="pm-action-bar">
+          <button class="pm-btn primary" onclick="triggerIseAction('${session.mac}', '${session.username}', 'reauthorize')">⚡ Restore CoA</button>
+          <button class="pm-btn danger" onclick="triggerIseAction('${session.mac}', '${session.username}', 'quarantine')">🛡️ Quarantine</button>
         </div>
       </div>
     `;
@@ -1889,6 +2015,69 @@ async function getDirections(target, start = userCurrentLocation) {
   }
 }
 
+function adminAdUnlock() {
+  const target = document.getElementById('adDetailStarID').innerText;
+  if(!target) return;
+  
+  requestWagApproval(`AD Unlock for account ${target}`, async () => {
+    try {
+      const res = await fetch('/api/ad/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: target, action: 'unlock', token: currentUser.token })
+      });
+      const data = await res.json();
+      showToast(data.message, data.status);
+      adminAdLookup(); // Refresh details
+    } catch (e) { showToast("Network error connecting to backend.", "error"); }
+  });
+}
+
+function adminAdToggleStatus(enable) {
+  const target = document.getElementById('adDetailStarID').innerText;
+  if(!target) return;
+  const action = enable ? 'enable' : 'disable';
+  
+  requestWagApproval(`AD Account ${enable ? 'Enable' : 'Disable'} for ${target}`, async () => {
+    try {
+      const res = await fetch('/api/ad/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: target, action: action, token: currentUser.token })
+      });
+      const data = await res.json();
+      showToast(data.message, data.status);
+      adminAdLookup(); // Refresh
+    } catch (e) { showToast("Network error connecting to backend.", "error"); }
+  });
+}
+
+function adminAdResetPassword() {
+  const target = document.getElementById('adDetailStarID').innerText;
+  const tempPw = document.getElementById('adResetTempPw').value.trim();
+  if(!target || !tempPw) {
+    showToast("Please enter a temporary password", "warning");
+    return;
+  }
+  
+  requestWagApproval(`AD Password Reset for ${target}`, async () => {
+    try {
+      const res = await fetch('/api/ad/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: target, action: 'reset_pw', params: { new_password: tempPw }, token: currentUser.token })
+      });
+      const data = await res.json();
+      if(data.status === "success") {
+        showToast("Password reset successfully!", "success");
+        document.getElementById('adResetTempPw').value = '';
+      } else {
+        showToast("Failed to reset password: " + data.message, "error");
+      }
+    } catch (e) { showToast("Network error connecting to backend.", "error"); }
+  });
+}
+
 function filterMaps() {
   const q = document.getElementById('mapSearchInput').value.toLowerCase();
   const filtered = allFloorPlans.filter(m => 
@@ -2221,13 +2410,13 @@ let currentUser = null;
 
 function togglePasswordVisibility() {
   const passInput = document.getElementById('loginPass');
-  const toggleBtn = document.getElementById('togglePass');
+  const toggleIcon = document.getElementById('togglePass');
   if (passInput.type === 'password') {
     passInput.type = 'text';
-    toggleBtn.innerText = '🔒';
+    toggleIcon.innerText = '🙈';
   } else {
     passInput.type = 'password';
-    toggleBtn.innerText = '👁️';
+    toggleIcon.innerText = '👁️';
   }
 }
 
@@ -2272,6 +2461,47 @@ async function saveSystemConfig() {
   } catch (e) {
     showToast("Failed to save config", "error");
   }
+}
+
+async function triggerRemoteAction(resourceId, actionType, btnEl) {
+  const originalText = btnEl.innerText;
+  
+  requestWagApproval(`SCCM Action: ${actionType} on Resource ${resourceId}`, async () => {
+    btnEl.innerText = "⏳ Executing...";
+    btnEl.disabled = true;
+    
+    try {
+      const res = await fetch('/api/sccm/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resource_id: resourceId,
+          action: actionType,
+          token: currentUser ? currentUser.token : null
+        })
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        btnEl.innerText = "✅ Success";
+        btnEl.style.background = "var(--green)";
+        btnEl.style.color = "white";
+        appendMessage(`🐴 Remote action **${actionType}** was successfully triggered for SCCM Resource **${resourceId}**.`, 'ai');
+      } else {
+        btnEl.innerText = "❌ Failed";
+        showToast(data.message || "Failed to trigger action", "error");
+      }
+    } catch (e) {
+      btnEl.innerText = "❌ Error";
+      showToast("Network error triggering action", "error");
+    } finally {
+      setTimeout(() => {
+        btnEl.innerText = originalText;
+        btnEl.disabled = false;
+        btnEl.style.background = "";
+        btnEl.style.color = "";
+      }, 3000);
+    }
+  });
 }
 
 async function performLogin() {
@@ -2813,13 +3043,14 @@ async function loadAuditLogs() {
     if (data.status === 'success') {
       let html = '';
       if (data.data.length === 0) {
-        html = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text2);">No audit records found</td></tr>';
+        html = '<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--text2);">No audit records found</td></tr>';
       } else {
         data.data.forEach(log => {
           html += `
             <tr>
               <td style="padding:10px 15px; color:var(--text2); font-family:monospace; font-size:12px;">${log.timestamp}</td>
               <td style="padding:10px 15px; font-weight:600; color:var(--accent2); font-size:12px;">${log.user}</td>
+              <td style="padding:10px 15px; font-weight:700; color:var(--accent); font-size:11px; text-transform:uppercase;">${log.platform || 'System'}</td>
               <td style="padding:10px 15px; font-weight:700; color:#fff; font-size:12px;">${log.action}</td>
               <td style="padding:10px 15px; color:var(--green); font-weight:600; font-size:12px;">${log.target}</td>
             </tr>
@@ -2830,6 +3061,89 @@ async function loadAuditLogs() {
     }
   } catch (e) {
     console.error("Failed to load audit logs", e);
+  }
+}
+
+let platformChart = null;
+let vitalsChart = null;
+
+async function loadSysAdminGlimpse() {
+  if (!currentUser) return;
+  
+  try {
+    const res = await fetch(`/api/admin/system-glimpse?token=${currentUser.token}`);
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      const g = data.data;
+      
+      // Update Vitals
+      const aiStatusEl = document.getElementById('glimpseAiStatus');
+      if (aiStatusEl) {
+        aiStatusEl.innerText = g.vitals.ai_status.split(' ')[0]; // Just ONLINE/OFFLINE
+        aiStatusEl.parentElement.style.opacity = g.vitals.ai_status.includes('ONLINE') ? '1' : '0.6';
+      }
+      
+      const sessionsEl = document.getElementById('glimpseSessions');
+      if (sessionsEl) sessionsEl.innerText = g.vitals.active_sessions;
+      
+      const actionsEl = document.getElementById('glimpseTotalActions');
+      if (actionsEl) actionsEl.innerText = g.metrics.total_logs;
+
+      // --- Platform Distribution Chart ---
+      const ctxP = document.getElementById('platformChart').getContext('2d');
+      if (platformChart) platformChart.destroy();
+      platformChart = new Chart(ctxP, {
+        type: 'doughnut',
+        data: {
+          labels: ['AD', 'ISE', 'SCCM', 'System'],
+          datasets: [{
+            data: [g.metrics.ad_actions, g.metrics.ise_actions, g.metrics.sccm_actions, g.metrics.total_logs - (g.metrics.ad_actions + g.metrics.ise_actions + g.metrics.sccm_actions)],
+            backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#6366f1'],
+            borderWidth: 0,
+            hoverOffset: 15
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#94a3b8', font: { family: 'Outfit', size: 12 } } }
+          },
+          cutout: '70%'
+        }
+      });
+
+      // --- Infrastructure Vitals Chart ---
+      const ctxV = document.getElementById('vitalsChart').getContext('2d');
+      if (vitalsChart) vitalsChart.destroy();
+      vitalsChart = new Chart(ctxV, {
+        type: 'bar',
+        data: {
+          labels: ['Knowledge Items', 'Cached Tickets'],
+          datasets: [{
+            label: 'Density',
+            data: [g.vitals.knowledge_items, g.vitals.cached_tickets],
+            backgroundColor: ['#10b981', '#7c3aed'],
+            borderRadius: 10,
+            barThickness: 40
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+            x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
+    }
+  } catch (e) {
+    console.error("Failed to load SysAdmin Glimpse", e);
   }
 }
 
@@ -2956,4 +3270,68 @@ async function adminAdResetPassword() {
   } catch (e) {
     showToast("Network error resetting password", "error");
   }
+}
+async function showUnifiedProfile(query, displayName) {
+  appendMessage(`🔍 **Building Unified Profile for ${displayName}...**`, 'ai');
+  try {
+    const token = currentUser ? currentUser.token : '';
+    const res = await fetch(`/api/trace/${encodeURIComponent(query)}?token=${token}`);
+    const data = await res.json();
+    if (data.status === "success") {
+      renderTraceResponse(data.data, true);
+    } else {
+      showToast("Profile build failed", "error");
+    }
+  } catch (e) { showToast("Backend connection lost", "error"); }
+}
+
+function renderTraceResponse(data, isProfile = false) {
+  let html = `<div class="trace-card">`;
+  html += `<div style="font-weight:700; color:var(--accent2); margin-bottom:12px; font-size:14px;">🔗 ${isProfile ? 'Unified Entity Profile' : 'Connectivity Trace Result'}</div>`;
+  
+  // USER SECTION
+  if (data.user) {
+    html += `
+      <div class="trace-section">
+        <div class="trace-label">👤 PERSON</div>
+        <div class="trace-val"><strong>${data.user.DisplayName || 'Unknown'}</strong> (${data.user.StarID || 'N/A'})</div>
+        <div class="trace-sub">${data.user.Title || 'N/A'} • ${data.user.Department || 'N/A'}</div>
+        <div class="trace-sub">📍 Office: ${data.user.Office || 'N/A'}</div>
+      </div>
+    `;
+  }
+
+  // DEVICE SECTION
+  if (data.devices && data.devices.length > 0) {
+    const d = data.devices[0];
+    html += `
+      <div class="trace-section">
+        <div class="trace-label">💻 PRIMARY DEVICE</div>
+        <div class="trace-val"><strong>${d.PCName || d.Tag || 'Unknown'}</strong> (${d.ProductModel || d.Model || 'Unknown'})</div>
+        <div class="trace-sub">Serial: ${d.SerialNumber || 'N/A'} • OS: ${d.OperatingSystemNameandVersion || d.Model || 'N/A'}</div>
+        <div class="trace-sub">🌐 IP: ${d.IPAddress || 'N/A'} • Last User: ${d.User || 'N/A'}</div>
+      </div>
+    `;
+  }
+
+  // NETWORK SECTION
+  if (data.network) {
+    const n = data.network;
+    html += `
+      <div class="trace-section">
+        <div class="trace-label">📶 NETWORK CONNECTION</div>
+        <div class="trace-val"><span class="status-pill ${n.status === 'Authorized' ? 'status-process' : 'status-new'}">${n.status || 'Active'}</span> ${n.vlan || 'N/A'}</div>
+        <div class="trace-sub">Connected via AP: <strong>${n.ap || 'Unknown'}</strong></div>
+        <div class="trace-sub">Switch: ${n.switch_ip || 'N/A'} Port ${n.switch_port || 'N/A'}</div>
+      </div>
+    `;
+  }
+
+  // LOCATION LINK
+  if (data.location && data.location.room) {
+     html += `<button class="ai-cmd-btn" style="width:100%; margin-top:10px;" onclick="getDirections('${data.location.room}')">🧭 Navigate to this Room (${data.location.room})</button>`;
+  }
+
+  html += `</div>`;
+  appendMessage(html, 'ai');
 }

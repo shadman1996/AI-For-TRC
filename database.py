@@ -210,14 +210,26 @@ def query_tdx_asset(query_str):
         return []
         
     conn = get_db()
-    # Check exact tag or serial if they are single word/token
+    # Check exact tag or serial if they are single word/token (High priority)
     if len(words) == 1:
         exact = words[0]
+        # First try exact tag match
+        exact_match = conn.execute("SELECT * FROM tdx_assets WHERE tag = ? COLLATE NOCASE OR serial = ? COLLATE NOCASE", (exact, exact)).fetchall()
+        if exact_match:
+            conn.close()
+            return [ {
+                "ID": row["id"], "Tag": row["tag"], "SerialNumber": row["serial"],
+                "Name": row["name"], "ProductModel": row["model"], "Manufacturer": row["manufacturer"],
+                "Status": row["status"], "Location": row["location"], "Room": row["room"],
+                "Owner": row["owner"], "OwnerDepartment": row["owner_dept"], "Source": "Exact Asset Match"
+            } for row in exact_match ]
+
+        # If no exact, try partial
         rows = conn.execute("""
             SELECT * FROM tdx_assets 
-            WHERE tag = ? OR serial = ? OR name LIKE ? OR attributes LIKE ?
+            WHERE tag LIKE ? OR serial LIKE ? OR name LIKE ? OR attributes LIKE ?
             LIMIT 10
-        """, (exact, exact, f"%{exact}%", f"%{exact}%")).fetchall()
+        """, (f"%{exact}%", f"%{exact}%", f"%{exact}%", f"%{exact}%")).fetchall()
     else:
         # Dynamic SQL intersection for multi-word
         sql = "SELECT * FROM tdx_assets WHERE "
@@ -297,6 +309,11 @@ def get_all_kb():
     entries = conn.execute("SELECT content FROM kb").fetchall()
     conn.close()
     return [e["content"] for e in entries]
+
+def get_all_tickets():
+    # Placeholder: currently tickets are managed via TeamDynamix API in server.py
+    # This function prevents crashes when calculating dashboard stats.
+    return []
 
 def migrate_data():
     """Migrates older JSON files and CSVs to unified SQLite engine."""

@@ -4,8 +4,11 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>TRC AI Help Desk Assistant — SMSU</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="style.css?v=2.1"/>
+<link rel="stylesheet" href="style.css?v=2.1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 <!-- Login Overlay -->
@@ -124,8 +127,13 @@
     <!-- DIRECTORY VIEW -->
     <section class="view" id="view-directory">
       <div class="view-header">
-        <h1>Campus Directory</h1>
-        <p>Search for staff, faculty, and student employees across the SMSU domain.</p>
+        <div style="display:flex; align-items:center; gap:20px;">
+          <div style="font-size:40px; background:rgba(99,102,241,0.1); width:80px; height:80px; border-radius:20px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(99,102,241,0.2);">📇</div>
+          <div>
+            <h1 style="margin:0;">Campus Directory</h1>
+            <p style="margin:5px 0 0;">Search for staff, faculty, and student employees across the SMSU domain.</p>
+          </div>
+        </div>
       </div>
       <div class="directory-search-bar">
         <input type="text" id="dirSearchInput" placeholder="🔍 Search by Name, StarID, or Email..." onkeydown="if(event.key==='Enter') searchDirectoryTab()"/>
@@ -141,8 +149,13 @@
     <!-- SCCM TOOLS VIEW -->
     <section class="view" id="view-sccm">
       <div class="view-header">
-        <h1>SCCM Remote Management</h1>
-        <p>Search for PCs on the network to trigger remote updates and sync policies.</p>
+        <div style="display:flex; align-items:center; gap:20px;">
+          <div style="font-size:40px; background:rgba(59,130,246,0.1); width:80px; height:80px; border-radius:20px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(59,130,246,0.2);">💻</div>
+          <div>
+            <h1 style="margin:0;">SCCM Remote Management</h1>
+            <p style="margin:5px 0 0;">Search for PCs on the network to trigger remote updates and sync policies.</p>
+          </div>
+        </div>
       </div>
       <div class="directory-search-bar">
         <input type="text" id="sccmSearchInput" placeholder="🔍 Search PC Name or StarID..." onkeydown="if(event.key==='Enter') searchSCCMTab()"/>
@@ -159,8 +172,13 @@
     <!-- MIST WIFI VIEW -->
     <section class="view" id="view-mist">
       <div class="view-header">
-        <h1>Mist WiFi Insights</h1>
-        <p>Lookup client connection details, signal strength, and AP history via MAC address.</p>
+        <div style="display:flex; align-items:center; gap:20px;">
+          <div style="font-size:40px; background:rgba(79,70,229,0.1); width:80px; height:80px; border-radius:20px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(79,70,229,0.2);">📶</div>
+          <div>
+            <h1 style="margin:0;">Mist WiFi Insights</h1>
+            <p style="margin:5px 0 0;">Lookup client connection details, signal strength, and AP history via MAC address.</p>
+          </div>
+        </div>
       </div>
       <div class="directory-search-bar">
         <input type="text" id="mistSearchInput" placeholder="🔍 Enter MAC Address (e.g. 00:11:22:33:44:55)..." onkeydown="if(event.key==='Enter') searchMistTab()"/>
@@ -177,9 +195,12 @@
     <!-- CISCO ISE WIFI & PORT SECURITY VIEW -->
     <section class="view" id="view-ise">
       <div class="view-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
-        <div>
-          <h1>Cisco ISE WiFi & Port Security</h1>
-          <p>Enforce network access policy, manage dynamic VLAN assignments, and quarantine compromised endpoints.</p>
+        <div style="display:flex; align-items:center; gap:20px;">
+          <div style="font-size:40px; background:rgba(99,102,241,0.1); width:80px; height:80px; border-radius:20px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(99,102,241,0.2);">🛡️</div>
+          <div>
+            <h1 style="margin:0;">Cisco ISE WiFi & Port Security</h1>
+            <p style="margin:5px 0 0;">Enforce network access policy, manage dynamic VLAN assignments, and quarantine compromised endpoints.</p>
+          </div>
         </div>
         <a href="https://ise.smsu.edu/admin/" target="_blank" class="btn-primary" style="background:var(--accent2); text-decoration:none; display:flex; align-items:center; gap:8px; font-weight:700;">
           🌐 Launch Cisco ISE Admin
@@ -290,6 +311,57 @@
         <p>Manage user roles, modular permissions, and network deployment.</p>
       </div>
       <div class="settings-container">
+        <!-- PREMIUM SYSADMIN DASHBOARD GLIMPSE -->
+        <div class="settings-card" id="sysadminGlimpseCard" style="background: transparent; border: none; padding: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <div>
+              <h2 style="margin:0; font-size: 24px; font-weight: 700;">System Administrator Command Center</h2>
+              <p style="margin:5px 0 0; color: var(--text2);">Real-time telemetry and cross-platform infrastructure monitoring.</p>
+            </div>
+            <button class="btn-primary" onclick="loadSysAdminGlimpse()" style="background:var(--accent); font-weight:700; border-radius: 12px; padding: 10px 20px;">🔄 Refresh Dashboard</button>
+          </div>
+
+          <!-- Top Metric Cards (Gradient Style) -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 30px;">
+            <div class="stat-card-premium" style="background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);">
+              <div class="stat-label">AI ENGINE STATUS</div>
+              <div class="stat-value" id="glimpseAiStatus">ONLINE</div>
+              <div class="stat-sub">phi3:mini @ 8001</div>
+              <div class="stat-icon">🧠</div>
+            </div>
+            <div class="stat-card-premium" style="background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);">
+              <div class="stat-label">ACTIVE TECHNICIANS</div>
+              <div class="stat-value" id="glimpseSessions">1</div>
+              <div class="stat-sub">Current concurrent sessions</div>
+              <div class="stat-icon">👥</div>
+            </div>
+            <div class="stat-card-premium" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+              <div class="stat-label">PLATFORM OPERATIONS</div>
+              <div class="stat-value" id="glimpseTotalActions">0</div>
+              <div class="stat-sub">AD, ISE & SCCM Total Logged</div>
+              <div class="stat-icon">⚡</div>
+            </div>
+          </div>
+
+          <!-- Charts Row -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; margin-bottom: 30px;">
+             <div class="settings-card" style="margin: 0; min-height: 350px; display: flex; flex-direction: column;">
+                <h3>Operation Distribution</h3>
+                <p>Telemetry split by managed platform.</p>
+                <div style="flex: 1; position: relative;">
+                   <canvas id="platformChart"></canvas>
+                </div>
+             </div>
+             <div class="settings-card" style="margin: 0; min-height: 350px; display: flex; flex-direction: column;">
+                <h3>Infrastructure Vitals</h3>
+                <p>Knowledge base and Ticket cache density.</p>
+                <div style="flex: 1; position: relative;">
+                   <canvas id="vitalsChart"></canvas>
+                </div>
+             </div>
+          </div>
+        </div>
+
         <div class="settings-card" id="deploymentCard">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <h3 style="margin:0;">🚀 Deployment Dashboard</h3>
@@ -403,6 +475,7 @@
                 <tr>
                   <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Timestamp</th>
                   <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Operator</th>
+                  <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Platform</th>
                   <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Action</th>
                   <th style="padding: 10px 15px; border-bottom: 1px solid var(--border);">Target</th>
                 </tr>
