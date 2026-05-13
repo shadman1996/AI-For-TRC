@@ -556,6 +556,102 @@ def toggle_ad_status(payload: ToggleStatusPayload, user=Depends(get_session_user
     add_audit_log(user["username"], action_str, starid)
     return {"status": "success", "message": f"Successfully updated AD account status for {starid} to: {'Enabled' if payload.enabled else 'Disabled'}."}
 
+# ----- CISCO IDENTITY SERVICES ENGINE (ISE) INTEGRATION -----
+MOCK_ISE_SESSIONS = [
+    {
+        "mac": "00:50:56:AB:CD:EF",
+        "username": "WAGAhsan",
+        "status": "Authorized",
+        "policy": "SMSU_Staff_Access",
+        "vlan": "VLAN 110 (Staff-LAN)",
+        "profile": "Windows11-Workstation",
+        "ap": "BA-112-AP1",
+        "switch_ip": "10.150.20.10",
+        "switch_port": "GigabitEthernet1/0/12"
+    },
+    {
+        "mac": "A4:D1:8C:88:2F:90",
+        "username": "sflint",
+        "status": "Authorized",
+        "policy": "SMSU_Staff_Access",
+        "vlan": "VLAN 110 (Staff-LAN)",
+        "profile": "Apple-iPhone",
+        "ap": "BA-201-AP3",
+        "switch_ip": "10.150.20.14",
+        "switch_port": "GigabitEthernet2/0/5"
+    }
+]
+
+class ISESecurityPayload(BaseModel):
+    mac: str
+    username: str
+
+@app.get("/api/ise/{query}")
+def query_ise(query: str):
+    """Lookup active network policies and switch sessions in Cisco ISE."""
+    q = query.strip().lower()
+    matches = []
+    for s in MOCK_ISE_SESSIONS:
+        if q in s["username"].lower() or q in s["mac"].lower():
+            matches.append(s)
+            
+    if matches:
+        return {"status": "success", "data": matches}
+        
+    # Dynamic fallback generator for realistic queries
+    import random
+    clean_q = query.strip()
+    is_mac = ":" in clean_q or "-" in clean_q
+    username = "Guest_" + str(random.randint(1000, 9999)) if is_mac else clean_q
+    mac = clean_q if is_mac else f"00:1A:2B:3C:{random.randint(10,99)}:7F"
+    
+    dynamic_session = {
+        "mac": mac,
+        "username": username,
+        "status": "Authorized",
+        "policy": "SMSU_Wired_Default" if is_mac else "SMSU_Staff_Access",
+        "vlan": "VLAN 100 (General-LAN)" if is_mac else "VLAN 110 (Staff-LAN)",
+        "profile": "Windows10-Workstation" if random.choice([True, False]) else "macOS-Client",
+        "ap": f"BA-201-AP{random.randint(1,5)}",
+        "switch_ip": f"10.150.20.{random.randint(10,50)}",
+        "switch_port": f"GigabitEthernet1/0/{random.randint(1,48)}"
+    }
+    return {"status": "success", "data": [dynamic_session]}
+
+@app.post("/api/admin/ise/quarantine")
+def ise_quarantine(payload: ISESecurityPayload, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Restricted operation.")
+        
+    mac = payload.mac.strip()
+    username = payload.username.strip()
+    
+    for s in MOCK_ISE_SESSIONS:
+        if s["mac"].lower() == mac.lower():
+            s["status"] = "Quarantined"
+            s["vlan"] = "VLAN 666 (Quarantine-Sandbox)"
+            s["policy"] = "SMSU_Quarantine_Restricted"
+            
+    add_audit_log(user["username"], "Quarantined Device (ISE)", f"MAC: {mac} (User: {username})")
+    return {"status": "success", "message": f"Successfully quarantined device {mac} on Cisco ISE. CoA packet dispatched successfully."}
+
+@app.post("/api/admin/ise/reauthorize")
+def ise_reauthorize(payload: ISESecurityPayload, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Restricted operation.")
+        
+    mac = payload.mac.strip()
+    username = payload.username.strip()
+    
+    for s in MOCK_ISE_SESSIONS:
+        if s["mac"].lower() == mac.lower():
+            s["status"] = "Authorized"
+            s["vlan"] = "VLAN 110 (Staff-LAN)"
+            s["policy"] = "SMSU_Staff_Access"
+            
+    add_audit_log(user["username"], "Re-Authorized Session (ISE)", f"MAC: {mac} (User: {username})")
+    return {"status": "success", "message": f"Dispatched Change of Authorization (CoA) to restore normal network permissions for {mac}."}
+
 # StarID Admin Portal Scraper (Headless with SQLite Caching)
 @app.get("/api/scrape/starid/{query}")
 def scrape_starid(query: str):

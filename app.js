@@ -1064,6 +1064,108 @@ function renderMistResults(clients) {
   container.innerHTML = html;
 }
 
+// ----- CISCO ISE TAB LOGIC -----
+async function searchIseTab() {
+  const input = document.getElementById('iseSearchInput');
+  const query = input.value.trim();
+  if (!query) return;
+
+  const resultsEl = document.getElementById('iseResults');
+  resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">🛡️</div><h3>Querying Cisco Identity Services Engine (ISE)...</h3></div>';
+
+  try {
+    const res = await fetch(`/api/ise/${query}`);
+    const data = await res.json();
+    if (data.status === 'success') {
+      renderIseResults(data.data);
+    } else {
+      resultsEl.innerHTML = `<div class="ticket-placeholder"><h3>❌ ${data.message}</h3></div>`;
+    }
+  } catch (e) {
+    resultsEl.innerHTML = '<div class="ticket-placeholder"><h3>❌ Error connecting to Cisco ISE Security services</h3></div>';
+  }
+}
+
+function renderIseResults(sessions) {
+  const container = document.getElementById('iseResults');
+  if (!sessions || sessions.length === 0) {
+    container.innerHTML = '<div class="ticket-placeholder"><h3>No active network sessions found for this client</h3></div>';
+    return;
+  }
+  
+  let html = `<div class="directory-grid">`;
+  sessions.forEach(session => {
+    const isQuarantined = session.status.toLowerCase() === 'quarantined';
+    html += `
+      <div class="directory-card" style="border-top: 4px solid ${isQuarantined ? 'var(--red)' : 'var(--green)'};">
+        <div class="dir-card-header">
+          <div class="dir-avatar" style="background:${isQuarantined ? 'var(--red)' : 'var(--accent)'};">🛡️</div>
+          <div class="dir-main-info">
+            <div class="dir-name">${session.username || 'Dynamic Endpoint'}</div>
+            <div class="dir-starid">${session.mac}</div>
+          </div>
+          <div class="dir-status ${isQuarantined ? 'disabled' : 'unlocked'}" style="text-transform:uppercase; font-weight:700;">
+            ${session.status}
+          </div>
+        </div>
+        <div class="dir-body" style="margin-bottom:15px;">
+          <div class="dir-item"><strong>Active Policy Profile:</strong> <span style="color:var(--accent2); font-weight:600;">${session.policy}</span></div>
+          <div class="dir-item"><strong>Dynamic VLAN Assignment:</strong> <span style="font-weight:700; color:#fff;">${session.vlan}</span></div>
+          <div class="dir-item"><strong>Endpoint Profiling Tag:</strong> <span>${session.profile}</span></div>
+          <div class="dir-item"><strong>Access Point (AP):</strong> <span>${session.ap || 'Wired Connection'}</span></div>
+          <div class="dir-item"><strong>Switch Location:</strong> <span>IP: ${session.switch_ip} (Port: ${session.switch_port})</span></div>
+        </div>
+        <div class="dir-footer" style="display:flex; gap:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
+          <button class="btn-small" onclick="triggerIseAction('${session.mac}', '${session.username}', 'reauthorize')" style="flex:1; background:rgba(34,197,94,0.1); border:1px solid var(--green); color:var(--green); cursor:pointer; font-weight:700; padding: 6px 12px; border-radius: 6px;">
+            ⚡ Restore / CoA
+          </button>
+          <button class="btn-small btn-danger" onclick="triggerIseAction('${session.mac}', '${session.username}', 'quarantine')" style="flex:1; cursor:pointer; font-weight:700; padding: 6px 12px; border-radius: 6px;">
+            🛡️ Quarantine
+          </button>
+        </div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+async function triggerIseAction(mac, username, actionType) {
+  if (!currentUser) {
+    showToast("Session expired, please login", "error");
+    return;
+  }
+  
+  const resultsEl = document.getElementById('iseResults');
+  resultsEl.innerHTML = `<div class="ticket-placeholder"><div class="placeholder-icon rotating">🛡️</div><h3>Dispatching Change of Authorization (CoA) to Cisco ISE...</h3></div>`;
+
+  try {
+    const res = await fetch(`/api/admin/ise/${actionType}?token=${currentUser.token}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ mac: mac, username: username })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast(data.message, "success");
+      // Refresh lookup
+      const searchInput = document.getElementById('iseSearchInput');
+      if (searchInput) {
+        searchInput.value = mac;
+        searchIseTab();
+      }
+    } else {
+      showToast(data.message || "Operation failed", "error");
+      searchIseTab();
+    }
+  } catch (e) {
+    showToast("Network error executing security enforcement", "error");
+    searchIseTab();
+  }
+}
+
 function getKeywordPrediction(text) {
   const lowerText = text.toLowerCase();
   

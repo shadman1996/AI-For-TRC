@@ -8,6 +8,11 @@
     "username": "vg6340ah",
     "password": "Temp@2026!!"
   },
+  "cisco_ise": {
+    "host": "ise.smsu.edu",
+    "username": "ise_admin",
+    "password": "IseSecurePassword2026!"
+  },
   "modules": [
     { "id": "chat", "name": "AI Assistant", "icon": "🤖" },
     { "id": "tickets", "name": "My Tickets", "icon": "🎫" },
@@ -15,6 +20,7 @@
     { "id": "sccm", "name": "SCCM Tools", "icon": "💻" },
     { "id": "ad", "name": "AD & User Management", "icon": "🔑" },
     { "id": "mist", "name": "Mist WiFi", "icon": "📶" },
+    { "id": "ise", "name": "Cisco ISE Security", "icon": "🛡️" },
     { "id": "form", "name": "TDX Form Guide", "icon": "📋" },
     { "id": "links", "name": "Quick Links", "icon": "🔗" },
     { "id": "wayfinding", "name": "Wayfinding", "icon": "🗺️" },
@@ -23,8 +29,8 @@
   "default_module_permissions": {
     "guest": ["chat", "directory", "wayfinding", "links"],
     "helpdesk": ["chat", "tickets", "directory", "form", "links", "wayfinding"],
-    "tech": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "wayfinding"],
-    "wag": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ad", "wayfinding"],
-    "sysadmin": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ad", "settings", "wayfinding"]
+    "tech": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ise", "wayfinding"],
+    "wag": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ise", "ad", "wayfinding"],
+    "sysadmin": ["chat", "tickets", "directory", "form", "links", "sccm", "mist", "ise", "ad", "settings", "wayfinding"]
   }
 }
