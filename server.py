@@ -37,11 +37,18 @@ class AIAdapter:
     
     @staticmethod
     def _check_ollama_alive():
-        """Fast socket check — returns True if Ollama port is open."""
+        """Fast socket check — dynamically extracts and checks the configured Ollama port."""
         try:
+            from urllib.parse import urlparse
+            engine = CONFIG.get("ai_engine", {})
+            endpoint = engine.get("endpoint", "http://127.0.0.1:11434/api/generate")
+            parsed = urlparse(endpoint)
+            host = parsed.hostname or "127.0.0.1"
+            port = parsed.port or 11434
+            
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.settimeout(0.5)
-            s.connect(("127.0.0.1", 11434))
+            s.connect((host, port))
             s.close()
             AIAdapter._ollama_down = False
             return True
