@@ -960,7 +960,7 @@ async function searchDirectoryTab() {
   resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Searching Campus Directory...</h3></div>';
 
   try {
-    const res = await fetch(`/api/ad/${query}`);
+    const res = await fetch(`/api/ad/${query}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       renderDirectoryResults(data.data, data.source);
@@ -3797,7 +3797,7 @@ async function showUnifiedProfile(starId, name) {
 async function fetchDirectoryDetails(starId) {
   const container = document.getElementById('prof-identity');
   try {
-    const res = await fetch(`/api/ad/${starId}`);
+    const res = await fetch(`/api/ad/${starId}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success' && data.data && data.data.length > 0) {
       const u = data.data[0];
@@ -3849,7 +3849,7 @@ function closeUnifiedProfile() {
 async function fetchPortalDetails(starId) {
   const container = document.getElementById('prof-portal');
   try {
-    const res = await fetch(`/api/scrape/starid/${starId}`);
+    const res = await fetch(`/api/scrape/starid/${starId}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success' && data.data && data.data.length > 0) {
       const u = data.data[0];
@@ -3884,7 +3884,7 @@ async function fetchPortalDetails(starId) {
         <div class="prof-data-item"><strong>State Employee Number:</strong> <span>${u.StateEmployeeNumber || 'N/A'}</span></div>
         <div class="prof-data-item"><strong>Designation:</strong> <span>${u.Title || 'N/A'}</span></div>
         <div class="prof-data-item"><strong>Department:</strong> <span>${u.Department || 'N/A'}</span></div>
-        <div class="prof-data-item"><strong>Room Number:</strong> <span style="font-weight:600; color:var(--accent2);">🚪 ${u.Room || 'N/A'}</span></div>
+        <div class="prof-data-item"><strong>Office/Room:</strong> <span style="font-weight:600; color:var(--accent2);">🚪 ${u.Office || u.Room || 'N/A'}</span></div>
         
         <div style="font-size:11.5px; color:var(--text2); margin-top:12px; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px; line-height:1.45;">
           <strong>ISRS Affiliation List:</strong><br>
@@ -3908,7 +3908,7 @@ async function fetchPortalDetails(starId) {
 async function fetchUserSCCM(starId) {
   const container = document.getElementById('prof-sccm');
   try {
-    const res = await fetch(`/api/sccm/user/${starId}`);
+    const res = await fetch(`/api/sccm/user/${starId}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success' && data.data.length > 0) {
       let html = `<h3>💻 SCCM Assets & Usage <span class="prof-badge">${data.data.length} Devices</span></h3>`;
@@ -3956,7 +3956,7 @@ async function fetchUserTDX(starId, name) {
 async function fetchUserMist(search) {
   const container = document.getElementById('prof-mist');
   try {
-    const res = await fetch(`/api/mist/${search}`);
+    const res = await fetch(`/api/mist/${search}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success' && data.data.length > 0) {
       const c = data.data[0];

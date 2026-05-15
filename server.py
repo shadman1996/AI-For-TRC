@@ -506,7 +506,7 @@ def find_directory_match(ad_display_name, ad_starid, faculty_list):
 
 # Active Directory Query via PowerShell (Flexible Search)
 @app.get("/api/ad/{query}")
-def query_ad(query: str):
+def query_ad(query: str, user=Depends(get_session_user)):
     ps_script = f"""
     $searcher = New-Object DirectoryServices.DirectorySearcher
     $searcher.Filter = "(&(objectClass=user)(|(samaccountname={query}*)(displayname=*{query}*)(mail=*{query}*)))"
@@ -515,6 +515,9 @@ def query_ad(query: str):
     $searcher.PropertiesToLoad.Add("title") | Out-Null
     $searcher.PropertiesToLoad.Add("department") | Out-Null
     $searcher.PropertiesToLoad.Add("lockouttime") | Out-Null
+    $searcher.PropertiesToLoad.Add("physicaldeliveryofficename") | Out-Null
+    $searcher.PropertiesToLoad.Add("mail") | Out-Null
+    $searcher.PropertiesToLoad.Add("telephonenumber") | Out-Null
     $results = $searcher.FindAll()
     if ($results.Count -gt 0) {{
         $out = @()
@@ -526,6 +529,9 @@ def query_ad(query: str):
                 DisplayName = if ($props["displayname"].Count -gt 0) {{ $props["displayname"][0] }} else {{ $null }}
                 Title = if ($props["title"].Count -gt 0) {{ $props["title"][0] }} else {{ $null }}
                 Department = if ($props["department"].Count -gt 0) {{ $props["department"][0] }} else {{ $null }}
+                Email = if ($props["mail"].Count -gt 0) {{ $props["mail"][0] }} else {{ $null }}
+                Phone = if ($props["telephonenumber"].Count -gt 0) {{ $props["telephonenumber"][0] }} else {{ $null }}
+                Office = if ($props["physicaldeliveryofficename"].Count -gt 0) {{ $props["physicaldeliveryofficename"][0] }} else {{ $null }}
                 IsLocked = $isLocked
             }}
         }}

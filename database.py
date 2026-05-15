@@ -212,12 +212,27 @@ def query_tdx_user(query_str):
     
     results = []
     for row in rows:
+        location = row["location"] or ""
+        room = row["room"] or ""
+        office = f"{location} {room}".strip() or "N/A"
+        
         results.append({
-            "UID": row["uid"], "StarID": row["username"], "FullName": row["fullname"],
-            "FirstName": row["firstname"], "LastName": row["lastname"],
-            "PrimaryEmail": row["email"], "Title": row["title"], "Phone": row["phone"],
-            "Location": row["location"], "Room": row["room"], "TechID": row["beid"],
+            "UID": row["uid"], 
+            "StarID": row["username"], 
+            "DisplayName": row["fullname"], # app.js expects DisplayName
+            "FullName": row["fullname"],
+            "FirstName": row["firstname"], 
+            "LastName": row["lastname"],
+            "Email": row["email"], # app.js expects Email
+            "PrimaryEmail": row["email"], 
+            "Title": row["title"], 
+            "Phone": row["phone"],
+            "Location": location, 
+            "Room": room, 
+            "Office": office, # app.js expects Office
+            "TechID": row["beid"],
             "Department": row["department"],
+            "IsLocked": False, # Fallback for UI
             "Source": "Indexed TDX Directory"
         })
     return results
