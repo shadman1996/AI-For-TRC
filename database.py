@@ -89,6 +89,18 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_asset_serial ON tdx_assets(serial)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_asset_name ON tdx_assets(name)")
 
+    # 6. Admin Audit Logs Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        operator TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target TEXT NOT NULL
+    )
+    """)
+
     conn.commit()
     conn.close()
     print("SQLite Database & High-Performance Indexes initialized.")
@@ -342,6 +354,24 @@ def migrate_data():
     conn.commit()
     conn.close()
     migrate_csv_to_sqlite()
+
+def add_audit_log(operator, platform, action, target):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO admin_audit_logs (operator, platform, action, target)
+        VALUES (?, ?, ?, ?)
+    """, (operator, platform, action, target))
+    conn.commit()
+    conn.close()
+
+def get_audit_logs(limit=100):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM admin_audit_logs ORDER BY timestamp DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
 
 if __name__ == "__main__":
     migrate_data()

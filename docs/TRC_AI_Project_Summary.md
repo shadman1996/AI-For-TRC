@@ -48,6 +48,7 @@ Staff describe an issue in plain language. The AI:
 - Provides step-by-step resolution guidance
 - Specifies exactly how to fill in the TDX ticket form (Classification, Service, Title, Responsible Group, Urgency)
 - Indicates who to escalate to and why
+- **Ticket Context Handoff (v3.6.0)**: The "Ask AI About This" button passes the full ticket context (ID, requestor, priority, service, description, and activity feed) directly to the AI, bypassing intent detectors so the assistant can provide a comprehensive action plan.
 
 ### 2. Active Directory Integration
 Staff can type `"Check AD for [username]"` and instantly see:
@@ -98,7 +99,9 @@ All destructive or high-privilege remote actions (e.g., AD Password Resets, SCCM
 
 ### 9. Premium SysAdmin Command Center (v3.5.0)
 The administrative modules have been fully redesigned with a **Premium Glassmorphic UI**:
-- **High-Density Dashboards**: Real-time infrastructure telemetry (AD/ISE/SCCM distribution) and system vitals (AI Engine status, technically active sessions).
+- **High-Density Dashboards**: Real-time infrastructure telemetry (AD/ISE/SCCM distribution) and live **Sparkline Charts** for AI Engine load and DB throughput.
+- **Session Intelligence**: Real-time **Active Session Timer** and initial-based user avatars.
+- **Full Mobile Support**: A complete mobile-first responsive architecture for on-the-go management.
 - **Professional Aesthetics**: Clean, profile-style cards for users and devices with visual signal bars and status pills.
 - **Action-Oriented Design**: Administrative buttons are seamlessly docked for immediate operational response.
 
@@ -107,6 +110,13 @@ Administrators can now deploy the tool across the campus LAN with one click:
 - **Auto-Discovery**: The system automatically detects the server's network IP address.
 - **Firewall Setup**: Includes a `setup_firewall.bat` script to securely open the port for WAG and Help Desk staff.
 - **Deployment Dashboard**: Shows the "Live URL" directly in the Admin Panel for easy sharing.
+
+### 11. Interactive AI Step-by-Step Wayfinding (v3.6.0)
+The AI is no longer just a digital directory; it is a physical campus guide:
+- **Multi-Phase Routing**: Generates precise, step-by-step walking instructions between any two campus locations (e.g., BA 200 to ST 269).
+- **Synchronized Map Overlays**: As the user follows the AI's guidance, the interface automatically switches to the correct building floor plan PDF for the current navigation phase.
+- **Elevation Intelligence**: Intelligently handles transitions between levels (stairs, elevators, skyways) and renders a path-aware ASCII 3D voxel projection of the route.
+- **Smart Target Detection**: Searching for room codes in the Campus Directory instantly offers to generate a custom wayfinding route.
 
 ---
 
@@ -126,19 +136,47 @@ Administrators can now deploy the tool across the campus LAN with one click:
 
 ## Planned Development Roadmap
 
-### Phase 3 — Live TDX Ticket Integration (Next Focus)
-With a TDX API token, the AI will:
-- **Live Ticket Queues**: Pull open tickets assigned to the logged-in user or their group.
-- **Intelligent Triage**: Analyze ticket descriptions and suggest immediate next steps.
-- **Auto-Drafting**: Generate professional escalation notes and resolution summaries.
-- **Shift Handoffs**: Produce automated reports for incoming staff so no context is lost.
+### Phase 3 — Live TDX Ticket Workflow ✅ (Completed v3.6.0)
+The AI now provides full ticket workflow support:
+- **Live Ticket Queues**: Pulls active tickets assigned to the logged-in user or their group.
+- **Feed-Aware AI Briefings**: Analyzes ticket activity feeds (comments, status changes) to produce structured briefings with Current State, Tech Action Items, Escalation Path, and Closing Notes.
+- **Smart Triage Fallback**: When the AI engine is offline, automatically matches tickets against the FAQ library for actionable procedures and escalation contacts.
+- **Shift Handoffs**: Produces automated reports for incoming staff so no context is lost.
 
-### Phase 4 — Full Operations Hub & Server Migration
-- **SMSU Server Deployment**: Migrate the backend and AI models to a dedicated SMSU server. This will enable the use of larger, faster LLM models (e.g., Llama 3) for greater accuracy and speed, removing the processing burden from local student worker PCs.
-- SLA and deadline alerts for aging tickets
-- Resolution suggestions based on similar historical tickets
-- Shift logs and audit trails
+### Phase 4 — Live TDX API Integration (Next Priority)
+Connect to the real TeamDynamix REST API for bidirectional ticket management:
+- **Real-Time Ticket Sync**: Replace mock ticket data with live API feeds using the TDX Web API (`/api/tickets` endpoints), pulling assigned tickets, requestor details, and full comment feeds in real-time.
+- **Bidirectional Updates**: Allow techs to post comments, update ticket status (New → In Process → Resolved), and reassign responsible groups — all from within the TRC AI interface without switching to the TDX web portal.
+- **AI-Drafted Responses**: Auto-generate professional customer-facing responses and internal notes based on the AI's analysis of the ticket history. Techs review and approve before posting.
+- **Smart Ticket Creation**: Pre-populate new TDX ticket forms with AI-suggested Classification, Service, Responsible Group, Urgency, and a drafted description — reducing ticket creation time by 80%.
+- **Attachment Pipeline**: Support viewing and adding attachments (screenshots, logs) directly from the ticket detail view.
 
+### Phase 5 — Dedicated SMSU Server Deployment & AI Upgrade
+Migrate from student worker PCs to a production-grade campus server:
+- **Centralized Server Hosting**: Deploy the backend and AI models to a dedicated SMSU ITS server (Linux VM or Windows Server) with a static campus IP, ensuring 24/7 uptime independent of individual workstations.
+- **Upgraded AI Models**: Move from `phi3:mini` (3.8B parameters) to larger, more capable models like `Llama 3.1 8B` or `Mistral 7B`, significantly improving the accuracy and depth of AI responses for complex IT troubleshooting.
+- **GPU Acceleration**: Leverage a server-grade GPU (NVIDIA T4/A10) for sub-second AI response times, eliminating the latency that currently limits briefing generation.
+- **HTTPS & Domain**: Configure SSL certificates and a campus subdomain (e.g., `trc-ai.smsu.edu`) for secure, professional access from any campus device.
+- **Automated Startup & Health Checks**: System service configuration with auto-restart on failure, daily database backups, and Prometheus/Grafana monitoring for uptime tracking.
+- **Active Directory SSO**: Replace the current StarID login with full Windows Integrated Authentication (Kerberos/NTLM) for seamless single sign-on — no separate password entry needed.
+
+### Phase 6 — Analytics, Reporting & SLA Intelligence
+Transform operational data into actionable leadership insights:
+- **Executive Dashboard**: Real-time KPI panels for WAG leadership showing ticket volume trends, average resolution times, SLA compliance rates, and team workload distribution.
+- **SLA Monitoring & Alerts**: Automated alerts when tickets approach or breach SLA deadlines (e.g., 24-hour response, 72-hour resolution). Color-coded urgency indicators in the ticket list.
+- **AI Performance Analytics**: Track how often AI briefings are used, retry rates, FAQ match accuracy, and which ticket categories benefit most from AI-assisted triage.
+- **Staff Performance Reports**: Per-tech metrics on tickets handled, average time-to-resolution, and escalation rates — designed for coaching, not surveillance.
+- **Trend Detection**: AI identifies recurring issue patterns (e.g., "D2L login issues spike every semester start") and proactively suggests KB articles or staffing adjustments.
+- **Exportable Reports**: One-click PDF/CSV export of weekly, monthly, and semester reports for ITS leadership and budget justification.
+
+### Phase 7 — MinnState System Expansion & Multi-Campus Vision
+Scale the platform beyond SMSU to serve the broader Minnesota State system:
+- **Multi-Tenant Architecture**: Refactor the backend to support multiple campuses, each with their own AD domain, TDX instance, SCCM environment, and KB — all managed from a single deployment.
+- **Shared Knowledge Network**: Create a federated KB where solutions discovered at one campus are surfaced as suggestions at others (e.g., a D2L fix found at SMSU appears for techs at Southwest Tech).
+- **Centralized Training Corpus**: Pool anonymized ticket resolution patterns across campuses to train a system-wide AI model that improves accuracy for all institutions.
+- **MinnState ServiceDesk Integration**: Bridge local TRC operations with the centralized MinnState ServiceDesk for seamless tier-2/tier-3 escalation workflows.
+- **Open-Source Community Model**: Package the TRC AI framework as a deployable solution that other MinnState institutions can adopt and customize for their own help desk operations.
+- **Mobile App (PWA)**: Progressive Web App support for on-the-go ticket management, enabling techs to receive AI briefings and update tickets from their phones during office visits and equipment deployments.
 ---
 
 ## Technology Stack

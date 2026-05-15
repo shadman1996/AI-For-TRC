@@ -11,13 +11,17 @@ Detailed guides are available in the [docs/](docs/SYSTEM_GUIDE.md) directory:
 - [🛠️ System Guide](docs/SYSTEM_GUIDE.md)
 
 ## 🚀 Core Features
+- **Premium Glassmorphic UI**: High-fidelity interface with animated background meshes, frosted-glass effects, and dynamic telemetry visualizations.
+- **Full Mobile Responsiveness**: A complete mobile-first design with slide-out navigation and adaptive grid layouts for smartphones and tablets.
+- **Productivity Shortcuts**: Instant global access via `Ctrl + K` (Focus AI Command Bar) and `Ctrl + 1-9` (Module Navigation).
+- **Session Intelligence**: Real-time active session duration tracking and automated permission synchronization on every login.
 - **Unified Connectivity Graph**: "Everything is Connected." The AI engine automatically traverses Active Directory, TDX, SCCM, Jamf Cloud, and Cisco ISE to build full relationship maps (User ➔ Device ➔ Network IP ➔ Physical Switch/AP).
 - **Intelligent Orchestration**: Automatically detects user intent (AD lookup, SCCM/Jamf search, WiFi status, KB search, Entity Trace).
 - **Deep Search**: Headless scraping of the StarID Admin Portal for extended user profiles.
 - **Remote Actions**: Trigger SCCM policy syncs, update scans, and device restarts directly from chat, with built-in Apple device management via Jamf.
 - **Modular Permissions**: Granular role-based access for Help Desk, Tech, WAG, and SysAdmin staff.
 - **Knowledge Ingestion**: Drag-and-drop documentation into the AI's brain for instant learning.
-- **Premium Customization Suite**: Personalize appearance using curated themes (including Cyberpunk, Nordic, Amethyst, and Dracula), Font Typography (Inter, Outfit, Roboto Mono, Playfair), Glassmorphic Intensity levels, and Chat Bubble Framing.
+- **Premium Customization Suite**: Personalize appearance using curated themes (Cyberpunk, Nordic, Amethyst, Dracula), Font Typography (Inter, Outfit, Roboto Mono, Playfair), and Glassmorphic Intensity levels.
 - **Integration API Gateway (Webhook)**: Built-in `POST /api/integration/query` programmatic endpoint to let external messaging bots (MS Teams, Discord, Slack) or autonomous frameworks (like OpenClaw) query your local knowledge bases and records instantly.
 
 ## 🛠️ Tech Stack

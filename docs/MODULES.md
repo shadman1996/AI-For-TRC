@@ -44,10 +44,18 @@ The TRC AI Assistant is built as a modular platform. Each module handles a speci
 - **Storage**: `trc_ai.db` SQLite database (migrated from legacy `kb.json`).
 - **AI Integration**: Uses fuzzy matching and LLM-based retrieval to find the most relevant IT procedures.
 
-## 8. 🎫 TDX Ticket Briefing
-- **Purpose**: Assisting student workers with ticket classification.
-- **Integration**: Connects to the TeamDynamix API.
-- **AI Logic**: Automatically generates a "Briefing" for active tickets, matching them with relevant KB articles and suggesting the correct TDX form.
+## 8. 🎫 TDX Ticket Briefing & Workflow Engine
+- **Purpose**: Providing techs with an instant, actionable summary of any ticket's current state — eliminating the need to read through the entire TDX feed before starting work.
+- **Integration**: Connects to the TeamDynamix API for ticket data and activity feed.
+- **AI Briefing (v3.6.0)**: Ingests the full ticket activity feed (comments + status changes) and generates a structured four-section briefing:
+    - **📍 Current State**: What has been done so far and who was the last person to act.
+    - **🔧 Tech Action Items**: What the tech picking up this ticket should do RIGHT NOW.
+    - **⚠️ Escalation Path**: Who to contact if the issue can't be resolved at this level.
+    - **📋 Closing Notes**: What information to include when updating or closing the ticket.
+- **Smart Triage Fallback**: When the AI engine is unavailable, the system automatically matches the ticket's service category against the FAQ_DATA library and displays matched procedures, resolution steps, TDX form fields, and escalation contacts.
+- **Activity Feed Timeline**: Renders a scrollable, color-coded timeline of all comments (💬) and status changes (🔄) with author names and timestamps.
+- **Ask AI About This**: Sends full ticket context (ID, requestor, priority, service, description, feed) directly to the AI stream, bypassing frontend intent detectors.
+- **Quick Actions**: One-click buttons for StarID profile lookup, TDX deep link, and AI chat handoff.
 
 ## 9. 🧠 Prompt Enrichment & Augmented Context Layer
 - **Purpose**: Fully bridge and cross-connect campus rooms, networks, staff directories, and devices for zero-hallucination AI chat.

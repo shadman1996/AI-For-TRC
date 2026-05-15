@@ -12,7 +12,7 @@ Welcome to the documentation for the **SMSU TRC Enterprise AI Assistant**. This 
 ## 🏗️ Architecture Overview
 The system follows a **Modular Client-Server Architecture**:
 - **Backend**: FastAPI (Python) serving as the orchestration layer between the UI and campus APIs (AD, SCCM, Jamf Cloud, Mist, TDX, Cisco ISE).
-- **Frontend**: A modern, responsive web dashboard built with Vanilla JS and CSS for maximum portability.
+- **Frontend**: A modern, responsive, mobile-first web dashboard built with Vanilla JS and CSS for maximum portability and performance.
 - **Database**: SQLite (`trc_ai.db`) for persistent session, user, and knowledge management. No flat-file JSON stores.
 - **AI Engine**: Local LLM (via Ollama) or Remote OpenAI/Azure adapters for intelligent reasoning.
 - **Security Layer**: `security.py` handles AES-256 encryption/decryption of all API credentials at runtime.

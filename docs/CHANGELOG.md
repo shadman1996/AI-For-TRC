@@ -2,7 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.4.0] - 2026-05-13 (Current)
+## [3.6.0] - 2026-05-14 (Current)
+### Added
+- **Premium Interactive Step-by-Step Wayfinding Assistant**: Fully redesigned the Campus Wayfinding dashboard module. Users can map customizable multi-elevation navigation routes (e.g., BA 200 to ST 269) with step-by-step instructions. The assistant dynamically maps each physical traversal stage to the correct campus floor plan PDF, automatically switching interactive map views as users follow along.
+- **Wayfinding Clean Layout Redesign**: Reorganized the Wayfinding sidebar controls into an elegant Mode Switcher tab system (AI Route Planner vs Browse PDFs) to remove visual clutter and cognitive load. The map display features floating translucent indicators and interactive phase controllers.
+- **Dynamic ASCII Hyper-Voxel Map Projections**: Fully upgraded the `draw_3d_route` generation logic to parse physical paths and building codes dynamically. Rather than rendering static text boxes, the elevation view aligns start markers (`📍`) and destination flags (`🚩`) exactly on the calculated levels.
+- **Smart Wayfinding Target Detection**: Searching for specific room codes (like `st269` or `ch128`) in the Campus Directory instantly intercepts the directory query failure and renders an elegant Wayfinding redirection card to launch custom step-by-step route planning.
+- **Feed-Aware AI Ticket Briefings**: The AI briefing now ingests the full ticket activity feed (comments, status changes) and produces a structured tech briefing with four sections: 📍 **Current State**, 🔧 **Tech Action Items**, ⚠️ **Escalation Path**, and 📋 **Closing Notes**. This gives incoming techs an instant understanding of where a ticket stands and what to do next.
+- **Activity Feed Timeline**: Ticket detail view now renders a scrollable, color-coded feed timeline showing all comments and status changes — who said what, when, with visual distinction between status changes (🔄) and comments (💬).
+- **Redesigned Ticket Detail View**: New layout with status card header, requestor info with one-click StarID profile lookup, collapsible description, service badge, and quick action buttons (Ask AI, Update in TDX, Lookup StarID).
+- **Smart Triage Fallback (Offline AI)**: When the AI engine is unavailable, the briefing now intelligently matches the ticket's service/keywords against the FAQ_DATA library and displays matched procedures, resolution steps, TDX form classification, escalation contacts, and the activity feed — instead of a generic "AI Briefing Unavailable" error.
+- **Ask AI About This (Direct Stream)**: The "Ask AI About This" button now sends the full ticket context (ID, requestor, priority, service, description) directly to the AI stream endpoint, bypassing frontend intent detectors (StarID/SCCM/Directory) that were intercepting the message.
+- **P Drive Access Intelligence**: Added a high-priority Knowledge Base rule for "P Drive" and "Network Drive" access requests. The AI now automatically identifies these requests and provides the direct TeamDynamix request form URL alongside mapping instructions for shared network storage.
+- **Mock Ticket Feed Data**: Added realistic comment/status change histories to the first 5 mock tickets for development and demo purposes (D2L, ISRS, Computer Replacement, AC Maintenance, Device Deployment).
+
+### Fixed
+- **Wayfinding Floor Inference**: Fixed an issue where room codes (e.g., BA 200) would default to the 1st floor map even if the room was on the 2nd floor. The system now intelligently parses room prefixes to select the correct elevation map.
+- **Critical: `UnboundLocalError: room_code`** — Fixed a crash in `enrich_ai_prompt()` where `room_code` and `bld` were referenced inside the `device_match` block but only defined in the `room_match` block. Searching for a person's name (e.g., "michelle beach") would trigger the device regex and crash the `/api/ai/stream` endpoint with a 500 error.
+- **Server Error Handling (`/api/ai/generate`)** — Wrapped the generate endpoint in try-except so unhandled exceptions in `enrich_ai_prompt()` return a graceful JSON response instead of a raw 500 error.
+- **Server Error Handling (`/api/ai/stream`)** — Added try-except around `enrich_ai_prompt()` in the stream endpoint with fallback to raw prompt, preventing 500 crashes.
+- **AI Briefing Timeout** — Added a 12-second `AbortController` timeout to the briefing fetch call to prevent indefinite hangs.
+- **Password Visibility Toggle** — Implemented `togglePasswordVisibility()` in `app.js` to fix the non-functional show/hide password button on the login screen.
+
+## [3.5.1] - 2026-05-13
+### Added
+- **Executive Manager Reporting (Phase 4 Prototype)**: Launched the "Platform Connectivity Pulse" in the AD Dashboard, providing real-time health monitoring for SCCM, Jamf, ISE, Mist, and TDX.
+- **AI Briefing Resiliency**: Implemented a robust briefing system with automated loading states, retry capabilities, and intelligent manual triage fallbacks when the local AI engine is under high load.
+- **Standardized Navigation Layout**: Optimized the Top Bar to align with industry-standard dashboard formats (User Profile and Notifications strictly right-aligned).
+- **Relocated Alert System**: Moved system toast notifications to the top-right corner for better visibility and reduced obstruction of core UI elements.
+- **Horizontal Scroll Suppression**: Enforced strict `overflow-x: hidden` rules across the sidebar and navigation groups to ensure a stable, vertical-only mobile and desktop experience.
+- **Bug Fix: Variable Shadowing**: Resolved a critical duplicate declaration issue in `app.js` that threatened session state stability.
+
+## [3.5.0] - 2026-05-13
+
+## [3.4.0] - 2026-05-13
 ### Added
 - **Unified Trace API (Everything is Connected)**: The AI now features a "global brain" capable of linking AD, TDX, SCCM, Jamf, ISE, and Mist. Technicians can instantly map users to their primary devices, current IP addresses, and physical network switch/AP locations.
 - **Jamf Cloud Integration**: Added support for Apple Device Management. iPads and MacBooks are now seamlessly routed through the Jamf Cloud API for telemetry and reporting.

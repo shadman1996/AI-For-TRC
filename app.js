@@ -1,6 +1,8 @@
 let SYSTEM_MODULES = [];
 let USER_MODULES = JSON.parse(localStorage.getItem('trc_modules')) || [];
+let currentUser = null;
 let currentView = 'chat';
+let lastViewedTicket = null; // Global for retry logic
 let userCurrentLocation = '';
 let pendingWayfindingTarget = '';
 
@@ -153,6 +155,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (USER_MODULES.length > 0) renderSidebar();
   fetchDeploymentInfo();
   startHeartbeat();
+  startTelemetry();
+  await checkSession();
+
+  // Global Keyboard Shortcuts
+  window.addEventListener('keydown', (e) => {
+    // Ctrl+K to focus AI Command Bar
+    if (e.ctrlKey && e.key === 'k') {
+      e.preventDefault();
+      const input = document.getElementById('globalAiCommandInput');
+      if (input) input.focus();
+    }
+    
+    // Ctrl + 1-9 to switch modules
+    if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
+      const index = parseInt(e.key) - 1;
+      const navButtons = document.querySelectorAll('.nav-btn');
+      if (navButtons[index]) {
+        navButtons[index].click();
+      }
+    }
+  });
 
   // File drag and drop upload
   const chatContainer = document.querySelector('.chat-container');
@@ -224,8 +247,25 @@ async function loadDirectoryData() {
 }
 
 // Navigation
+function toggleSidebar(open) {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  if (!sidebar || !overlay) return;
+  
+  if (open) {
+    sidebar.classList.add('mobile-open');
+    overlay.classList.add('active');
+  } else {
+    sidebar.classList.remove('mobile-open');
+    overlay.classList.remove('active');
+  }
+}
+
 function switchView(viewId) {
-  if (viewId === currentView) return; // Avoid redundant switches
+  if (viewId === currentView) {
+    if (window.innerWidth <= 1024) toggleSidebar(false);
+    return;
+  }
   
   if (viewId !== 'login' && !USER_MODULES.includes(viewId)) {
     console.warn("Access Denied for module:", viewId);
@@ -242,6 +282,8 @@ function switchView(viewId) {
   
   const targetBtn = document.querySelector(`.nav-btn[data-view="${viewId}"]`);
   if (targetBtn) targetBtn.classList.add('active');
+
+  if (window.innerWidth <= 1024) toggleSidebar(false);
 
   if (viewId === 'tickets') {
     loadTickets();
@@ -262,15 +304,34 @@ function switchView(viewId) {
 function renderSidebar() {
   const nav = document.getElementById('sidebarNav');
   if (!nav) return;
+  
+  const groups = [
+    { title: 'Core Interface', ids: ['chat', 'tickets', 'directory', 'wayfinding'] },
+    { title: 'Admin Systems', ids: ['sccm', 'ad', 'mist', 'ise', 'jamf'] },
+    { title: 'Information', ids: ['form', 'links', 'settings'] }
+  ];
+
   let html = '';
   
-  SYSTEM_MODULES.forEach(mod => {
-    if (USER_MODULES.includes(mod.id)) {
-      html += `
-        <button class="nav-btn ${currentView === mod.id ? 'active' : ''}" data-view="${mod.id}" onclick="switchView('${mod.id}')">
-          <span>${mod.icon}</span> ${mod.name}
-        </button>
-      `;
+  groups.forEach(group => {
+    // Check if user has at least one module in this group
+    const hasGroup = group.ids.some(id => USER_MODULES.includes(id));
+    if (hasGroup) {
+      html += `<div class="nav-group-title">${group.title}</div>`;
+      group.ids.forEach(id => {
+        if (USER_MODULES.includes(id)) {
+          const mod = SYSTEM_MODULES.find(m => m.id === id) || { 
+            id: id, 
+            name: id.toUpperCase(), 
+            icon: '⚙️' 
+          };
+          html += `
+            <button class="nav-btn ${currentView === mod.id ? 'active' : ''}" data-view="${mod.id}" onclick="switchView('${mod.id}')">
+              <span>${mod.icon}</span> ${mod.name}
+            </button>
+          `;
+        }
+      });
     }
   });
   
@@ -864,6 +925,38 @@ async function searchDirectoryTab() {
   if (!query) return;
 
   const resultsEl = document.getElementById('directoryResults');
+  
+  // Smart intent detection: redirect non-name queries to AI chat
+  const queryLower = query.toLowerCase();
+  const navKeywords = ['go to', 'where is', 'directions', 'how to get', 'how do i get', 'navigate', 'find the', 'library', 'building', 'office', 'room', 'parking', 'help me', 'i want', 'i need', 'what is', 'how do', 'can you', 'tell me'];
+  const isNavQuery = navKeywords.some(kw => queryLower.includes(kw));
+  // Also detect if query is too long to be a name (names are usually < 5 words)
+  const wordCount = query.split(/\s+/).length;
+  // Precise Campus Wayfinding detection for room codes like st269, ba200, ch128
+  const isRoomCode = /^[a-zA-Z]{2,3}\d{1,4}$/.test(query);
+  
+  if (isNavQuery || wordCount > 5 || isRoomCode) {
+    resultsEl.innerHTML = `
+      <div class="ticket-placeholder" style="max-width: 500px; margin: 0 auto; text-align: center;">
+        <div class="placeholder-icon" style="font-size: 48px; margin-bottom: 12px;">🗺️</div>
+        <h3 style="color: var(--accent2); font-size: 18px; margin-bottom: 8px;">Campus Wayfinding Target Detected</h3>
+        <p style="color: var(--text2); font-size: 13px; line-height: 1.5; margin-bottom: 16px;">
+          <strong>"${query.toUpperCase()}"</strong> corresponds to a campus location query rather than a directory profile.<br>Let's map out an interactive step-by-step visual map route!
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <button class="btn-primary" style="background: var(--accent2); border: none; padding: 12px; border-radius: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"
+            onclick="launchCustomWayfindingRoute('${query.toUpperCase()}')">
+            🧭 Generate Step-by-Step AI Map Route
+          </button>
+          <button class="btn-small" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 12px; cursor: pointer;"
+            onclick="switchView('chat'); document.getElementById('userInput').value='${query.replace(/'/g, "\\'")}'; sendMessage();">
+            💬 Ask AI Assistant in Chat
+          </button>
+        </div>
+      </div>`;
+    return;
+  }
+
   resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Searching Campus Directory...</h3></div>';
 
   try {
@@ -919,9 +1012,9 @@ function renderDirectoryResults(users, source = 'Active Directory') {
         <div class="dir-body">
           <div class="dir-item"><strong>Title:</strong> ${displayTitle}</div>
           <div class="dir-item"><strong>Department:</strong> ${displayDept}</div>
-          ${user.Office ? `<div class="dir-item"><strong>Room Number:</strong> 🚪 ${user.Office}</div>` : ''}
-          ${user.Email ? `<div class="dir-item"><strong>Email:</strong> 📧 ${user.Email}</div>` : ''}
-          ${user.Phone ? `<div class="dir-item"><strong>Phone:</strong> 📞 ${user.Phone}</div>` : ''}
+          ${user.Office ? `<div class="dir-item" style="display:flex; justify-content:space-between; align-items:center;"><span><strong>Room Number:</strong> 🚪 ${user.Office}</span><span onclick="event.stopPropagation(); copyToClipboard('${user.Office}', this)" style="cursor:pointer; opacity:0.5;">📋</span></div>` : ''}
+          ${user.Email ? `<div class="dir-item" style="display:flex; justify-content:space-between; align-items:center;"><span><strong>Email:</strong> 📧 ${user.Email}</span><span onclick="event.stopPropagation(); copyToClipboard('${user.Email}', this)" style="cursor:pointer; opacity:0.5;">📋</span></div>` : ''}
+          ${user.Phone ? `<div class="dir-item" style="display:flex; justify-content:space-between; align-items:center;"><span><strong>Phone:</strong> 📞 ${user.Phone}</span><span onclick="event.stopPropagation(); copyToClipboard('${user.Phone}', this)" style="cursor:pointer; opacity:0.5;">📋</span></div>` : ''}
         </div>
         <div class="dir-actions">
            <button class="btn-small" onclick="event.stopPropagation(); copyToClipboard('${user.StarID}', this)">📋 Copy StarID</button>
@@ -1844,35 +1937,63 @@ async function showTicketDetail(id) {
   // Update active state in list
   document.querySelectorAll('.ticket-card').forEach(c => c.classList.remove('active'));
   document.getElementById(`ticket-card-${id}`).classList.add('active');
+  lastViewedTicket = ticket;
+  
+  // Parse requestor StarID if present
+  const reqStarIdMatch = (ticket.requestor || '').match(/[a-zA-Z]{2}[0-9]{4}[a-zA-Z]{2}/);
+  const reqStarId = reqStarIdMatch ? reqStarIdMatch[0] : '';
+  
+  const statusClass = ticket.status.toLowerCase().includes('process') ? 'status-process' : 'status-new';
+  const createdDate = ticket.created ? new Date(ticket.created).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
   
   const detailEl = document.getElementById('ticketDetail');
   detailEl.innerHTML = `
-    <div class="detail-header">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div class="detail-title">${ticket.title}</div>
-        <a href="https://services.smsu.edu/TDNext/Apps/181/Tickets/TicketDet?TicketID=${ticket.id}" 
-           target="_blank" 
-           class="btn-handoff" 
-           style="background: var(--accent); color: #fff; text-decoration: none; padding: 6px 12px; font-size: 11px; border-radius: 6px; display: flex; align-items: center; gap: 6px;">
-           🌐 View in TeamDynamix
-        </a>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <div>
+        <div class="detail-title" style="margin-bottom:4px;">${ticket.title}</div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <span style="font-size:12px; color:var(--text2);">#${ticket.id}</span>
+          <span class="ticket-status ${statusClass}" style="font-size:11px;">${ticket.status}</span>
+          <span style="font-size:12px;" class="${ticket.priority === 'High' ? 'priority-high' : ''}">🚩 ${ticket.priority}</span>
+          <span style="font-size:12px; color:var(--text2);">📅 ${createdDate}</span>
+        </div>
       </div>
-      <div class="detail-meta">
-        <span><strong>ID:</strong> #${ticket.id}</span>
-        <span><strong>Requestor:</strong> ${ticket.requestor}</span>
-        <span><strong>Priority:</strong> <span class="${ticket.priority === 'High' ? 'priority-high' : ''}">${ticket.priority}</span></span>
-        <span><strong>Service:</strong> ${ticket.service}</span>
+      <a href="https://services.smsu.edu/TDNext/Apps/181/Tickets/TicketDet?TicketID=${ticket.id}" 
+         target="_blank" 
+         style="background:var(--accent); color:#fff; text-decoration:none; padding:6px 14px; font-size:11px; border-radius:6px; display:flex; align-items:center; gap:6px; white-space:nowrap;">
+         🌐 View in TDX
+      </a>
+    </div>
+    
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:12px;">
+        <div style="font-size:10px; text-transform:uppercase; color:var(--text2); margin-bottom:6px; letter-spacing:0.5px;">Requestor</div>
+        <div style="font-size:14px; font-weight:600; color:var(--text);">👤 ${ticket.requestor}</div>
+        ${reqStarId ? `<div style="display:flex; gap:6px; margin-top:8px;">
+          <button class="btn-small" style="font-size:10px; padding:3px 8px;" onclick="showUnifiedProfile('${reqStarId}', '${(ticket.requestor || '').replace(/'/g, "\\\\'")}')">🔍 Profile</button>
+          <button class="btn-small" style="font-size:10px; padding:3px 8px;" onclick="copyToClipboard('${reqStarId}')">📋 ${reqStarId}</button>
+        </div>` : ''}
+      </div>
+      <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:12px;">
+        <div style="font-size:10px; text-transform:uppercase; color:var(--text2); margin-bottom:6px; letter-spacing:0.5px;">Service</div>
+        <div style="font-size:13px; font-weight:600; color:var(--accent2);">⚙️ ${ticket.service}</div>
       </div>
     </div>
     
-    <div class="briefing-section">
-      <h4>Original Description</h4>
-      <p style="background: rgba(255,255,255,0.03); padding: 16px; border-radius: 8px;">${ticket.description}</p>
-    </div>
+    <details style="margin-bottom:16px; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:8px;">
+      <summary style="padding:12px 16px; cursor:pointer; font-size:12px; font-weight:600; color:var(--text2);">📝 Original Description</summary>
+      <div style="padding:0 16px 14px 16px; font-size:13px; line-height:1.6; color:var(--text);">${ticket.description}</div>
+    </details>
     
-    <div id="aiBriefingContainer" class="briefing-card">
+    <div id="aiBriefingContainer" class="briefing-card" style="border-left:3px solid var(--accent);">
       <div class="placeholder-icon" style="font-size:24px; animation: bounce 1s infinite;">🐴</div>
-      <p style="text-align:center; font-size:12px; color:var(--text2);">AI is analyzing ticket and matching Knowledge Base...</p>
+      <p style="text-align:center; font-size:12px; color:var(--text2);">AI is generating your tech briefing...</p>
+    </div>
+    
+    <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+      <button class="btn-small" style="background:var(--accent); border:none; color:#fff;" onclick="askAIAboutTicket()">💬 Ask AI About This</button>
+      <a href="https://services.smsu.edu/TDNext/Apps/181/Tickets/TicketDet?TicketID=${ticket.id}" target="_blank" class="btn-small" style="text-decoration:none; color:var(--text);">📝 Update in TDX</a>
+      ${reqStarId ? `<button class="btn-small" onclick="switchView('chat'); document.getElementById('userInput').value='find ${reqStarId}'; sendMessage();">🔎 Lookup ${reqStarId}</button>` : ''}
     </div>
     
     <div id="kbSuggestionsContainer" class="kb-suggestions hidden">
@@ -1881,7 +2002,6 @@ async function showTicketDetail(id) {
     </div>
   `;
   
-  // Generate AI Briefing and match KB
   generateAIBriefing(ticket);
   matchKnowledgeBase(ticket);
 }
@@ -1903,62 +2023,309 @@ async function matchKnowledgeBase(ticket) {
   } catch (e) {}
 }
 
-async function generateAIBriefing(ticket) {
+async function generateAIBriefing(ticket, retryCount = 0) {
   const container = document.getElementById('aiBriefingContainer');
+  if (!container) return;
   
-  const prompt = `You are a Senior IT Tech. Analyze this ticket and provide a concise briefing for a junior tech.
-  Ticket Title: ${ticket.title}
+  container.innerHTML = `<div class="loading-briefing"><span class="spinner"></span> 🐴 AI is analyzing ticket history...</div>`;
+  
+  // Build feed timeline for AI context
+  let feedContext = 'No activity feed available.';
+  if (ticket.feed && ticket.feed.length > 0) {
+    feedContext = ticket.feed.map(f => {
+      const d = new Date(f.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+      return `[${d}] ${f.author} (${f.type}): ${f.text}`;
+    }).join('\n');
+  }
+  
+  const prompt = `You are a Senior IT Tech at SMSU TRC. Analyze this ticket's FULL HISTORY and brief the incoming tech on what's happening.
+
+  Ticket #${ticket.id}: ${ticket.title}
+  Status: ${ticket.status} | Priority: ${ticket.priority} | Service: ${ticket.service}
+  Requestor: ${ticket.requestor}
   Description: ${ticket.description}
   
+  === TICKET FEED (Activity Timeline) ===
+  ${feedContext}
+  === END FEED ===
+  
   Format your response EXACTLY like this:
-  SUMMARY: [One sentence summary]
-  STEPS: [Bullet points of what to do next]
-  WARNINGS: [Any potential gotchas or things to watch out for]`;
+  CURRENT STATE: [What is the current status of this ticket based on the feed? What has been done so far? Who was the last person to act?]
+  TECH ACTION: [What should the tech picking this up do RIGHT NOW? Be specific.]
+  ESCALATION: [Who should be contacted if it can't be resolved? Any specific person mentioned in the feed?]
+  CLOSING NOTES: [What info should be included when updating/closing this ticket?]`;
   
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+    
     const res = await fetch('/api/ai/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         prompt,
         token: currentUser ? currentUser.token : null
-      })
+      }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     
     if (res.ok) {
       const data = await res.json();
       const text = data.response;
       
-      // Basic parser for our custom format
-      const summary = text.match(/SUMMARY:(.*?)(?=STEPS:|$)/si)?.[1]?.trim() || "See description.";
-      const steps = text.match(/STEPS:(.*?)(?=WARNINGS:|$)/si)?.[1]?.trim() || "Follow standard troubleshooting.";
-      const warnings = text.match(/WARNINGS:(.*?)$/si)?.[1]?.trim() || "No specific warnings.";
+      // If AI returned an offline/error message, fall through to smart fallback
+      if (text.includes("AI engine is offline") || text.includes("AI Engine error") || text.includes("AI connection dropped")) {
+        throw new Error("ai_offline");
+      }
+
+      // Basic parser for our new format
+      const stateMatch = text.match(/CURRENT STATE:(.*?)(?=TECH ACTION:|$)/si);
+      const actionMatch = text.match(/TECH ACTION:(.*?)(?=ESCALATION:|$)/si);
+      const escMatch = text.match(/ESCALATION:(.*?)(?=CLOSING NOTES:|$)/si);
+      const closingMatch = text.match(/CLOSING NOTES:(.*?)$/si);
+
+      const currentState = stateMatch ? stateMatch[1].trim() : "See ticket feed for current status.";
+      const techAction = actionMatch ? actionMatch[1].trim() : "Review the ticket description and follow standard procedures.";
+      const escalation = escMatch ? escMatch[1].trim() : "Escalate to the responsible group listed in TDX.";
+      const closingNotes = closingMatch ? closingMatch[1].trim() : "Document resolution steps and verify with requestor.";
+      
+      // Build feed timeline HTML
+      let feedTimelineHtml = '';
+      if (ticket.feed && ticket.feed.length > 0) {
+        feedTimelineHtml = `
+          <details style="margin-top:14px; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:8px;" open>
+            <summary style="padding:10px 14px; cursor:pointer; font-size:11px; font-weight:600; color:var(--text2);">📜 Activity Feed (${ticket.feed.length} entries)</summary>
+            <div style="padding:0 14px 12px 14px; max-height:250px; overflow-y:auto;">
+              ${ticket.feed.map(f => {
+                const d = new Date(f.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                const icon = f.type === 'status' ? '🔄' : '💬';
+                const color = f.type === 'status' ? 'var(--accent2)' : 'var(--text)';
+                return `<div style="display:flex; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04); font-size:12px;">
+                  <span style="min-width:16px;">${icon}</span>
+                  <div>
+                    <span style="font-weight:600; color:${color};">${f.author}</span>
+                    <span style="opacity:0.5; margin-left:6px;">${d}</span>
+                    <div style="margin-top:2px; color:var(--text2); line-height:1.4;">${f.text}</div>
+                  </div>
+                </div>`;
+              }).join('')}
+            </div>
+          </details>`;
+      }
       
       container.innerHTML = `
-        <div class="briefing-section">
-          <h4>AI Summary</h4>
-          <p>${summary}</p>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+          <span style="background:rgba(34,197,94,0.15); color:#22c55e; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:600;">AI BRIEFING</span>
         </div>
         <div class="briefing-section">
-          <h4>Recommended Next Steps</h4>
-          <p>${steps.replace(/\n/g, '<br>')}</p>
+          <h4>📍 Current State</h4>
+          <p>${currentState.replace(/\n/g, '<br>')}</p>
         </div>
-        <div class="briefing-section">
-          <h4>Special Considerations</h4>
-          <p>${warnings.replace(/\n/g, '<br>')}</p>
+        <div class="briefing-section" style="background:rgba(99,102,241,0.05); border-radius:8px; padding:12px; margin:8px 0;">
+          <h4 style="color:var(--accent);">🔧 What You Need To Do Now</h4>
+          <p>${techAction.replace(/\n/g, '<br>')}</p>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px;">
+          <div class="briefing-section">
+            <h4>⚠️ Escalation</h4>
+            <p style="font-size:12px;">${escalation.replace(/\n/g, '<br>')}</p>
+          </div>
+          <div class="briefing-section">
+            <h4>📋 Closing Notes</h4>
+            <p style="font-size:12px;">${closingNotes.replace(/\n/g, '<br>')}</p>
+          </div>
+        </div>
+        ${feedTimelineHtml}
         </div>
       `;
     } else {
-      container.innerHTML = `<p style="color:var(--yellow);">AI Briefing unavailable. Local Ollama server returned an error.</p>`;
+      throw new Error("server_error");
     }
   } catch (e) {
-    container.innerHTML = `
-      <div class="briefing-section">
-        <h4>Manual Triage Suggestion</h4>
-        <p>Could not connect to AI engine. Based on the category <strong>${ticket.service}</strong>, you should check the standard troubleshooting steps in the FAQ Library.</p>
-      </div>
-    `;
+    console.error("Briefing Error:", e);
+    lastViewedTicket = ticket; // Save for retry
+    
+    // --- SMART STATIC FALLBACK: Match ticket to FAQ_DATA for actionable triage ---
+    let fallbackHtml = '';
+    const serviceLower = (ticket.service || '').toLowerCase();
+    const titleLower = (ticket.title || '').toLowerCase();
+    const descLower = (ticket.description || '').toLowerCase();
+    const combinedText = `${serviceLower} ${titleLower} ${descLower}`;
+    
+    // Score each FAQ by keyword match against the ticket
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    if (typeof FAQ_DATA !== 'undefined') {
+      for (const faq of FAQ_DATA) {
+        let score = 0;
+        // Direct service name match (strongest signal)
+        if (serviceLower.includes(faq.service.toLowerCase()) || faq.service.toLowerCase().includes(serviceLower)) {
+          score += 10;
+        }
+        // Keyword scanning
+        for (const kw of faq.keywords) {
+          if (combinedText.includes(kw.toLowerCase())) {
+            score += 2;
+          }
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = faq;
+        }
+      }
+    }
+    
+    if (bestMatch && bestScore >= 2) {
+      // We have a solid FAQ match — show a real, useful briefing
+      const stepsHtml = bestMatch.steps.map((s, i) => `<div style="display:flex; gap:8px; margin-bottom:6px;"><span style="color:var(--accent); font-weight:700; min-width:18px;">${i+1}.</span><span>${s}</span></div>`).join('');
+      const infoHtml = bestMatch.info.map(i => `<div style="margin-bottom:4px;">• ${i}</div>`).join('');
+      
+      // Build feed timeline for fallback view too
+      let fallbackFeedHtml = '';
+      if (ticket.feed && ticket.feed.length > 0) {
+        const lastEntry = ticket.feed[ticket.feed.length - 1];
+        const lastDate = new Date(lastEntry.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        
+        fallbackFeedHtml = `
+        <div class="briefing-section" style="margin-top:12px; background:rgba(34,197,94,0.05); border-radius:8px; padding:12px;">
+          <h4>📍 Last Activity</h4>
+          <p style="font-size:13px;"><strong>${lastEntry.author}</strong> <span style="opacity:0.6;">(${lastDate})</span>: ${lastEntry.text}</p>
+        </div>
+        <details style="margin-top:10px; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:8px;">
+          <summary style="padding:10px 14px; cursor:pointer; font-size:11px; font-weight:600; color:var(--text2);">📜 Full Activity Feed (${ticket.feed.length} entries)</summary>
+          <div style="padding:0 14px 12px 14px; max-height:200px; overflow-y:auto;">
+            ${ticket.feed.map(f => {
+              const d = new Date(f.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+              const icon = f.type === 'status' ? '🔄' : '💬';
+              return `<div style="display:flex; gap:8px; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.04); font-size:11px;">
+                <span>${icon}</span>
+                <div><strong>${f.author}</strong> <span style="opacity:0.5;">${d}</span><br>${f.text}</div>
+              </div>`;
+            }).join('')}
+          </div>
+        </details>`;
+      }
+      fallbackHtml = `
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+          <span style="background:rgba(99,102,241,0.15); color:var(--accent); padding:3px 10px; border-radius:12px; font-size:10px; font-weight:600;">SMART TRIAGE</span>
+          <span style="font-size:11px; color:var(--text2); opacity:0.7;">Matched from ${bestMatch.count} resolved tickets</span>
+        </div>
+        
+        <div class="briefing-section">
+          <h4>📋 Matched Procedure: ${bestMatch.service}</h4>
+          <p style="font-size:13px; color:var(--text2); margin-bottom:12px;">Category: <strong>${bestMatch.category}</strong></p>
+        </div>
+        
+        <div class="briefing-section">
+          <h4>🔍 Info to Gather</h4>
+          <div style="font-size:13px; line-height:1.6;">${infoHtml}</div>
+        </div>
+        
+        <div class="briefing-section">
+          <h4>🔧 Resolution Steps</h4>
+          <div style="font-size:13px; line-height:1.6;">${stepsHtml}</div>
+        </div>
+        
+        <div class="briefing-section" style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12px;">
+          <div><strong>Classification:</strong> ${bestMatch.form.Classification}</div>
+          <div><strong>Service:</strong> ${bestMatch.form.Service}</div>
+          <div><strong>Resp. Group:</strong> ${bestMatch.form.RespGroup}</div>
+          <div><strong>Urgency:</strong> ${bestMatch.form.Urgency}</div>
+        </div>
+        
+        ${bestMatch.escalate ? `
+        <div style="background:rgba(245,158,11,0.1); border-left:3px solid #f59e0b; padding:8px 12px; margin-top:10px; font-size:12px; border-radius:0 6px 6px 0;">
+          <strong>⚠️ Escalation:</strong> ${bestMatch.escalate}
+        </div>` : ''}
+        
+        ${fallbackFeedHtml}
+        
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button class="btn-small" style="background:rgba(255,255,255,0.1); border:1px solid var(--border);" onclick='generateAIBriefing(lastViewedTicket)'>
+            🔄 Retry AI Analysis
+          </button>
+          <button class="btn-small" style="background:var(--accent); border:none; color:#fff;" onclick="askAIAboutTicket()">
+            💬 Ask AI About This
+          </button>
+        </div>
+      `;
+    } else {
+      // No FAQ match — show a clean generic fallback with ticket context
+      fallbackHtml = `
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+          <span style="background:rgba(245,158,11,0.15); color:#f59e0b; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:600;">MANUAL TRIAGE</span>
+        </div>
+        
+        <div class="briefing-section">
+          <h4>📋 Ticket Summary</h4>
+          <p style="font-size:13px;"><strong>Service:</strong> ${ticket.service}</p>
+          <p style="font-size:13px;"><strong>Priority:</strong> ${ticket.priority}</p>
+          <p style="font-size:13px; margin-top:8px;">${ticket.description}</p>
+        </div>
+        
+        <div class="briefing-section">
+          <h4>🔧 Recommended Actions</h4>
+          <div style="font-size:13px; line-height:1.7;">
+            <div>1. Verify the requestor's identity and contact info</div>
+            <div>2. Check the <strong>FAQ Library</strong> for "${ticket.service}" procedures</div>
+            <div>3. Search for related tickets in TeamDynamix</div>
+            <div>4. If unresolved, escalate to the appropriate responsible group</div>
+          </div>
+        </div>
+        
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button class="btn-small" style="background:rgba(255,255,255,0.1); border:1px solid var(--border);" onclick='generateAIBriefing(lastViewedTicket)'>
+            🔄 Retry AI Analysis
+          </button>
+          <button class="btn-small" style="background:var(--accent); border:none; color:#fff;" onclick="askAIAboutTicket()">
+            💬 Ask AI About This
+          </button>
+        </div>
+      `;
+    }
+    
+    container.innerHTML = fallbackHtml;
   }
+}
+
+/**
+ * Sends the full ticket context to the AI chat so the assistant can provide
+ * actionable guidance: user lookups, specific resolution steps, escalation paths.
+ * Bypasses sendMessage() to avoid triggering StarID/SCCM intent detectors.
+ */
+function askAIAboutTicket() {
+  const ticket = lastViewedTicket;
+  if (!ticket) {
+    showToast("No ticket selected", "error");
+    return;
+  }
+  
+  // Build a rich, context-packed prompt the AI can act on
+  const contextPrompt = [
+    `I'm working on Ticket #${ticket.id}: "${ticket.title}".`,
+    `Requestor: ${ticket.requestor} | Priority: ${ticket.priority} | Service: ${ticket.service}`,
+    `Description: ${ticket.description}`,
+    ``,
+    `As my AI assistant, please:`,
+    `1. Look up the requestor's StarID/account info if available`,
+    `2. Tell me exactly what steps I should take to resolve this`,
+    `3. Who should I escalate to if I can't fix it myself?`,
+    `4. What info should I include when updating or closing this ticket?`
+  ].join('\n');
+  
+  // Switch to chat and show the user's prompt
+  switchView('chat');
+  appendMessage(contextPrompt, 'user');
+  
+  // Add to history for context
+  chatHistory.push({ role: 'user', content: contextPrompt });
+  if (chatHistory.length > 8) chatHistory.shift();
+  
+  // Go DIRECTLY to the AI stream — skip all intent detectors (StarID, SCCM, etc.)
+  const typingId = 'typing-ticket-' + Date.now();
+  streamAIResponse(contextPrompt, typingId);
 }
 
 function generateHandoffReport() {
@@ -2079,6 +2446,242 @@ async function getDirections(target, start = userCurrentLocation) {
   } catch (e) {
     removeTyping(typingId);
     appendMessage("Sorry, I couldn't generate directions right now.", 'ai');
+  }
+}
+
+// ----- PREMIUM INTERACTIVE STEP-BY-STEP WAYFINDING ASSISTANT -----
+let currentRouteStepsArray = [];
+let currentRouteStepIndex = 0;
+let currentRouteBuildings = [];
+let currentRouteTargetHint = '';
+
+function toggleWayfindingSidebarMode(mode) {
+  const panelRoute = document.getElementById('sidePanelRoute');
+  const panelBrowse = document.getElementById('sidePanelBrowse');
+  const tabRoute = document.getElementById('tabRouteMode');
+  const tabBrowse = document.getElementById('tabBrowseMode');
+  
+  if (!panelRoute || !panelBrowse) return;
+  
+  if (mode === 'route') {
+    panelRoute.style.display = 'flex';
+    panelBrowse.style.display = 'none';
+    if (tabRoute) { tabRoute.style.background = 'var(--accent2)'; tabRoute.style.color = '#fff'; }
+    if (tabBrowse) { tabBrowse.style.background = 'transparent'; tabBrowse.style.color = 'var(--text2)'; }
+    
+    if (currentRouteStepsArray.length > 0) {
+      const ph = document.getElementById('mapPlaceholder');
+      if (ph) ph.classList.add('hidden');
+      const vc = document.getElementById('pdfViewerContainer');
+      if (vc) vc.classList.add('hidden');
+      const rv = document.getElementById('aiRouteViewerContainer');
+      if (rv) rv.classList.remove('hidden');
+    }
+  } else {
+    panelRoute.style.display = 'none';
+    panelBrowse.style.display = 'flex';
+    if (tabBrowse) { tabBrowse.style.background = 'var(--accent2)'; tabBrowse.style.color = '#fff'; }
+    if (tabRoute) { tabRoute.style.background = 'transparent'; tabRoute.style.color = 'var(--text2)'; }
+    
+    if (allFloorPlans.length === 0) {
+      fetch('/api/wayfinding/list').then(r => r.json()).then(d => {
+        if(d.status === 'success') {
+          allFloorPlans = d.data;
+          renderMapList(allFloorPlans);
+        }
+      }).catch(e=>{});
+    } else {
+      renderMapList(allFloorPlans);
+    }
+  }
+}
+
+function launchCustomWayfindingRoute(target) {
+  switchView('wayfinding');
+  toggleWayfindingSidebarMode('route');
+  const targetInput = document.getElementById('routeTargetInput');
+  if (targetInput) {
+    targetInput.value = target;
+    triggerRouteCalculation();
+  }
+}
+
+async function triggerRouteCalculation() {
+  const startVal = document.getElementById('routeStartInput').value.trim() || 'BA 200';
+  const targetVal = document.getElementById('routeTargetInput').value.trim();
+  
+  if (!targetVal) {
+    showToast("Please enter a destination room/building code", "warning");
+    return;
+  }
+  
+  // Reveal interactive preview container and hide base placeholders
+  document.getElementById('mapPlaceholder').classList.add('hidden');
+  document.getElementById('pdfViewerContainer').classList.add('hidden');
+  const routeViewer = document.getElementById('aiRouteViewerContainer');
+  if (routeViewer) routeViewer.classList.remove('hidden');
+  
+  const stepCard = document.getElementById('activeStepCard');
+  if (stepCard) stepCard.innerHTML = `<div style="display:flex; align-items:center; gap:10px;"><span class="rotating">⏳</span> AI Calculating multi-elevation step-by-step route map...</div>`;
+  const mapLbl = document.getElementById('overlayMapLabel');
+  if (mapLbl) mapLbl.innerText = 'Calculating...';
+  
+  try {
+    const res = await fetch('/api/ai/directions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: targetVal, start: startVal })
+    });
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      // Split directions array
+      currentRouteStepsArray = data.directions.split('|||').filter(s => s.trim().length > 0);
+      currentRouteBuildings = data.buildings || [];
+      currentRouteTargetHint = data.map_hint || '';
+      currentRouteStepIndex = 0;
+      
+      // Auto update header
+      const titleEl = document.getElementById('routeHeaderTitle');
+      if (titleEl) titleEl.innerText = `Route: ${startVal.toUpperCase()} ➡️ ${targetVal.toUpperCase()}`;
+      const subtitleEl = document.getElementById('routeHeaderSubtitle');
+      if (subtitleEl) subtitleEl.innerText = `Total Navigation Phases: ${currentRouteStepsArray.length}`;
+      
+      // Ensure floor plans are preloaded if empty
+      if (allFloorPlans.length === 0) {
+        try {
+          const fpRes = await fetch('/api/wayfinding/list');
+          const fpData = await fpRes.json();
+          if (fpData.status === 'success') {
+            allFloorPlans = fpData.data;
+            renderMapList(allFloorPlans);
+          }
+        } catch(e){}
+      }
+      
+      renderActiveRouteStep();
+    } else {
+      if (stepCard) stepCard.innerHTML = `❌ Error calculating route parameters.`;
+    }
+  } catch (e) {
+    if (stepCard) stepCard.innerHTML = `❌ Connection timeout communicating with routing engine.`;
+  }
+}
+
+function renderActiveRouteStep() {
+  if (currentRouteStepsArray.length === 0) return;
+  const idx = currentRouteStepIndex;
+  const total = currentRouteStepsArray.length;
+  const stepText = currentRouteStepsArray[idx];
+  
+  const stepCard = document.getElementById('activeStepCard');
+  if (!stepCard) return;
+  
+  // Build interactive layout for the step
+  let html = `<div style="font-weight: 700; color: var(--accent2); margin-bottom: 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">
+                📍 Step ${idx + 1} of ${total}
+              </div>`;
+              
+  // If it's the ASCII 3D Map representation at the end, render properly
+  if (stepText.includes('<pre') || stepText.includes('HYPER-VOXEL')) {
+    html += stepText;
+  } else {
+    html += `<div style="font-size: 15px; font-weight: 500; color: #fff;">${stepText}</div>`;
+  }
+  
+  // Navigation indicators
+  if (idx === total - 1) {
+    html += `<div style="color: var(--green); font-weight: 700; font-size: 12px; margin-top: 10px;">🚩 Route Completed!</div>`;
+  }
+  
+  stepCard.innerHTML = html;
+  
+  // Update button constraints
+  const btnPrev = document.getElementById('btnPrevStep');
+  if (btnPrev) btnPrev.disabled = (idx === 0);
+  const btnNext = document.getElementById('btnNextStep');
+  if (btnNext) {
+    btnNext.disabled = (idx === total - 1);
+    if (idx === total - 1) {
+      btnNext.innerText = '✅ Arrived';
+    } else {
+      btnNext.innerText = 'Next Step ➡️';
+    }
+  }
+  
+  // Very clever dynamic mapping: determine which building/floor PDF corresponds to this specific walking stage!
+  let targetBuildingCode = 'BA';
+  let targetFloorStr = 'First';
+  
+  const textUpper = stepText.toUpperCase();
+  const bldgCodes = ['BA', 'CH', 'SM', 'SS', 'CC', 'PE', 'REC', 'IL', 'FA', 'FH', 'SC', 'ST', 'RA', 'LIB'];
+  for (const bc of bldgCodes) {
+    if (textUpper.includes(`(${bc})`) || textUpper.includes(` ${bc} `) || textUpper.includes(` ${bc}`) || textUpper.startsWith(bc)) {
+      targetBuildingCode = bc;
+      break;
+    }
+  }
+  
+  if (currentRouteBuildings.length > 0) {
+    const propIdx = Math.min(Math.floor((idx / total) * currentRouteBuildings.length), currentRouteBuildings.length - 1);
+    targetBuildingCode = currentRouteBuildings[propIdx].toUpperCase();
+  }
+  
+  if (textUpper.includes('FLOOR 2') || textUpper.includes('SECOND') || textUpper.includes('2ND')) {
+    targetFloorStr = 'Second';
+  } else if (textUpper.includes('FLOOR 3') || textUpper.includes('THIRD') || textUpper.includes('3RD')) {
+    targetFloorStr = 'Third';
+  } else if (textUpper.includes('FLOOR 4') || textUpper.includes('FOURTH') || textUpper.includes('4TH')) {
+    targetFloorStr = 'Fourth';
+  } else {
+    // Check if there is a room number like BA200, BA 200, ST269, etc.
+    const roomMatch = textUpper.match(/[A-Z]{2,3}\s*(\d{3,4})/);
+    if (roomMatch) {
+      const firstDigit = roomMatch[1].charAt(0);
+      if (firstDigit === '2') targetFloorStr = 'Second';
+      else if (firstDigit === '3') targetFloorStr = 'Third';
+      else if (firstDigit === '4') targetFloorStr = 'Fourth';
+      else targetFloorStr = 'First';
+    } else {
+      targetFloorStr = 'First';
+    }
+  }
+  
+  let bestMap = null;
+  if (allFloorPlans.length > 0) {
+    bestMap = allFloorPlans.find(m => m.building.toUpperCase() === targetBuildingCode && m.floor.toUpperCase() === targetFloorStr.toUpperCase());
+    if (!bestMap) bestMap = allFloorPlans.find(m => m.building.toUpperCase() === targetBuildingCode);
+    if (!bestMap) bestMap = allFloorPlans[0];
+  }
+  
+  const frame = document.getElementById('routePdfFrame');
+  const label = document.getElementById('overlayMapLabel');
+  
+  if (bestMap) {
+    if (label) label.innerText = `${bestMap.building} - ${bestMap.floor} Floor Plan`;
+    if (frame && frame.src !== window.location.origin + bestMap.url && frame.src !== bestMap.url) {
+      frame.src = bestMap.url;
+    }
+  } else {
+    if (label) label.innerText = `Campus Overview (${targetBuildingCode})`;
+    const fallbackUrl = `/floorplans/${targetFloorStr}Floor${targetBuildingCode}Plans.pdf`;
+    if (frame && !frame.src.includes(fallbackUrl)) {
+      frame.src = fallbackUrl;
+    }
+  }
+}
+
+function nextRouteStep() {
+  if (currentRouteStepIndex < currentRouteStepsArray.length - 1) {
+    currentRouteStepIndex++;
+    renderActiveRouteStep();
+  }
+}
+
+function prevRouteStep() {
+  if (currentRouteStepIndex > 0) {
+    currentRouteStepIndex--;
+    renderActiveRouteStep();
   }
 }
 
@@ -2399,8 +3002,20 @@ async function checkSLAs() {
   }
 }
 
-async function executeAICommand() {
-  const input = document.getElementById('aiCommandInput');
+async function executeGlobalAICommand() {
+  await executeAICommand('globalAiCommandInput');
+}
+
+function quickAction(text) {
+  const input = document.getElementById('userInput');
+  if (!input) return;
+  input.value = text;
+  sendMessage();
+}
+
+async function executeAICommand(inputId = 'aiCommandInput') {
+  const input = document.getElementById(inputId);
+  if (!input) return;
   const query = input.value.trim();
   if (!query) return;
   
@@ -2473,7 +3088,6 @@ function handleCommandKey(e) {
 }
 
 // ----- AUTHENTICATION LOGIC -----
-let currentUser = null;
 
 function togglePasswordVisibility() {
   const passInput = document.getElementById('loginPass');
@@ -2575,6 +3189,70 @@ async function triggerRemoteAction(resourceId, actionType, btnEl) {
   });
 }
 
+let pendingApprovalTask = null;
+
+function requestWagApproval(title, task) {
+  pendingApprovalTask = task;
+  const modal = document.getElementById('approvalModal');
+  const titleEl = document.getElementById('approvalTitle');
+  const pinInput = document.getElementById('approvalPin');
+  const errorDiv = document.getElementById('approvalError');
+  
+  if (modal) {
+    titleEl.innerText = title;
+    pinInput.value = '';
+    errorDiv.innerText = '';
+    modal.classList.remove('hidden');
+    setTimeout(() => pinInput.focus(), 100);
+  }
+}
+
+function closeApprovalModal() {
+  const modal = document.getElementById('approvalModal');
+  if (modal) modal.classList.add('hidden');
+  pendingApprovalTask = null;
+}
+
+async function submitWagApproval() {
+  const pinInput = document.getElementById('approvalPin');
+  const errorDiv = document.getElementById('approvalError');
+  const btn = document.getElementById('approvalSubmitBtn');
+  const pin = pinInput.value.trim();
+  
+  if (!pin) {
+    errorDiv.innerText = "Please enter the 4-digit PIN.";
+    return;
+  }
+  
+  btn.disabled = true;
+  btn.innerText = "Verifying...";
+  
+  try {
+    const res = await fetch('/api/auth/verify_pin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: pin })
+    });
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      closeApprovalModal();
+      if (pendingApprovalTask) {
+        await pendingApprovalTask();
+      }
+    } else {
+      errorDiv.innerText = "Invalid WAG PIN. Access Denied.";
+      pinInput.value = '';
+      pinInput.focus();
+    }
+  } catch (e) {
+    errorDiv.innerText = "Network error verifying PIN.";
+  } finally {
+    btn.disabled = false;
+    btn.innerText = "Authorize Action";
+  }
+}
+
 async function performLogin() {
   const user = document.getElementById('loginUser').value.trim();
   const pass = document.getElementById('loginPass').value.trim();
@@ -2607,6 +3285,7 @@ async function performLogin() {
       USER_MODULES = data.modules || [];
       localStorage.setItem('trc_session', JSON.stringify(currentUser));
       localStorage.setItem('trc_modules', JSON.stringify(USER_MODULES));
+      localStorage.setItem('trc_login_time', Date.now().toString());
       document.getElementById('loginOverlay').classList.add('hidden');
       const appDiv = document.querySelector('.app');
       if (appDiv) appDiv.style.display = 'flex';
@@ -2636,6 +3315,12 @@ async function checkSession() {
       if (data.status === "success") {
         USER_MODULES = data.data.modules || [];
         localStorage.setItem('trc_modules', JSON.stringify(USER_MODULES));
+        
+        // Update user object if roles changed
+        if (data.data.role !== currentUser.role) {
+            currentUser.role = data.data.role;
+            localStorage.setItem('trc_session', JSON.stringify(currentUser));
+        }
       } else {
         // Session expired or invalid
         performLogout();
@@ -2651,6 +3336,9 @@ async function checkSession() {
     if (appDiv) appDiv.style.display = 'flex';
     updateProfileUI();
     renderSidebar();
+    startSessionTimer();
+    
+    console.log("Session verified. Modules:", USER_MODULES);
     
     // Switch to first allowed view if current is login or empty
     if (currentView === 'login' || !currentView) {
@@ -2685,6 +3373,13 @@ async function updateProfileUI() {
   document.getElementById('headerUserName').innerText = currentUser.username;
   document.getElementById('headerUserRole').innerText = currentUser.role.toUpperCase();
   
+  // Dynamic Initials for Avatar
+  const avatarEl = document.getElementById('headerUserAvatar');
+  if (avatarEl && currentUser.username) {
+    const initials = currentUser.username.substring(0, 2).toUpperCase();
+    avatarEl.innerText = initials;
+  }
+  
   // Show admin button if sysadmin
   if (currentUser.role === 'sysadmin' || currentUser.role === 'wag') {
     document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
@@ -2692,6 +3387,27 @@ async function updateProfileUI() {
   } else {
     document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
   }
+  
+  startSessionTimer();
+}
+
+let sessionTimerInterval = null;
+function startSessionTimer() {
+  if (sessionTimerInterval) clearInterval(sessionTimerInterval);
+  const loginTime = parseInt(localStorage.getItem('trc_login_time')) || Date.now();
+  const timerEl = document.getElementById('sessionTimer');
+  
+  function updateTimer() {
+    const now = Date.now();
+    const diff = now - loginTime;
+    const hrs = Math.floor(diff / 3600000).toString().padStart(2, '0');
+    const mins = Math.floor((diff % 3600000) / 60000).toString().padStart(2, '0');
+    const secs = Math.floor((diff % 60000) / 1000).toString().padStart(2, '0');
+    if (timerEl) timerEl.innerText = `${hrs}:${mins}:${secs}`;
+  }
+  
+  updateTimer();
+  sessionTimerInterval = setInterval(updateTimer, 1000);
 }
 
 let SYS_CONFIG = null;
@@ -3137,7 +3853,6 @@ async function loadAuditLogs() {
 
 let platformChart = null;
 let vitalsChart = null;
-
 async function loadSysAdminGlimpse() {
   if (!currentUser) return;
   
@@ -3159,7 +3874,19 @@ async function loadSysAdminGlimpse() {
       if (sessionsEl) sessionsEl.innerText = g.vitals.active_sessions;
       
       const actionsEl = document.getElementById('glimpseTotalActions');
-      if (actionsEl) actionsEl.innerText = g.metrics.total_logs;
+      if (actionsEl) actionsEl.innerText = g.vitals.total_actions;
+
+      // Update Platform Health Pulse
+      if (g.health) {
+        Object.entries(g.health).forEach(([id, status]) => {
+          const chip = document.getElementById(`pulse-${id}`);
+          if (chip) {
+            const span = chip.querySelector('span');
+            span.innerText = status;
+            chip.className = `pulse-chip ${status === 'ONLINE' ? 'online' : 'offline'}`;
+          }
+        });
+      }
 
       // --- Platform Distribution Chart ---
       const ctxP = document.getElementById('platformChart').getContext('2d');
@@ -3167,16 +3894,15 @@ async function loadSysAdminGlimpse() {
       platformChart = new Chart(ctxP, {
         type: 'doughnut',
         data: {
-          labels: ['AD', 'ISE', 'SCCM', 'Jamf', 'System'],
+          labels: ['AD', 'ISE', 'SCCM', 'Jamf'],
           datasets: [{
             data: [
-              g.metrics.ad_actions, 
-              g.metrics.ise_actions, 
-              g.metrics.sccm_actions, 
-              g.metrics.jamf_actions, 
-              g.metrics.total_logs - (g.metrics.ad_actions + g.metrics.ise_actions + g.metrics.sccm_actions + g.metrics.jamf_actions)
+              g.platforms.ad, 
+              g.platforms.ise, 
+              g.platforms.sccm, 
+              g.platforms.jamf
             ],
-            backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#ef4444', '#6366f1'],
+            backgroundColor: ['#3b82f6', '#f59e0b', '#ef4444', '#10b981'],
             borderWidth: 0,
             hoverOffset: 15
           }]
@@ -3200,7 +3926,7 @@ async function loadSysAdminGlimpse() {
           labels: ['Knowledge Items', 'Cached Tickets'],
           datasets: [{
             label: 'Density',
-            data: [g.vitals.knowledge_items, g.vitals.cached_tickets],
+            data: [g.vitals.kb_density, g.vitals.ticket_density],
             backgroundColor: ['#10b981', '#7c3aed'],
             borderRadius: 10,
             barThickness: 40
@@ -3411,4 +4137,34 @@ function renderTraceResponse(data, isProfile = false) {
 
   html += `</div>`;
   appendMessage(html, 'ai');
+}
+
+// --- TELEMETRY & SPARKLINE ANIMATION ---
+function startTelemetry() {
+  setInterval(() => {
+    // Simulate AI load based on activity
+    const aiLoad = Math.floor(Math.random() * 15) + (isAIReady ? 5 : 0);
+    updateSparkline('aiSparkline', aiLoad, 30);
+    document.getElementById('aiSparkVal').innerText = `${aiLoad}%`;
+    
+    // Simulate DB throughput
+    const dbLoad = Math.floor(Math.random() * 50) + 10;
+    updateSparkline('dbSparkline', dbLoad / 2, 50);
+    document.getElementById('dbSparkVal').innerText = `${dbLoad}/s`;
+  }, 2000);
+}
+
+function updateSparkline(containerId, value, max) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  const height = Math.min((value / max) * 100, 100);
+  const bar = document.createElement('div');
+  bar.className = 'sparkline-bar';
+  bar.style.height = `${height}%`;
+  
+  container.appendChild(bar);
+  if (container.children.length > 15) {
+    container.removeChild(container.firstChild);
+  }
 }
