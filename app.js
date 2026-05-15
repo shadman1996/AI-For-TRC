@@ -2144,11 +2144,14 @@ async function showTicketDetail(id) {
     <div id="aiCommentArea-${ticket.id}" class="hidden" style="margin-top:20px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:12px; padding:15px; animation: slideIn 0.3s ease-out;">
       <div style="font-size:11px; color:var(--accent2); margin-bottom:10px; font-weight:700;">🤖 AI SUGGESTED COMMENT</div>
       <textarea id="aiDraftComment-${ticket.id}" style="width:100%; height:120px; background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; color:#fff; padding:10px; font-family:inherit; font-size:13px; resize:vertical;"></textarea>
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
-        <span style="font-size:10px; color:var(--text2); opacity:0.6;">* Don't forget to add your name to the comment in TDX</span>
-        <div style="display:flex; gap:8px;">
-          <button class="btn-small" style="background:transparent; border:1px solid var(--border);" onclick="this.parentElement.parentElement.parentElement.classList.add('hidden')">Cancel</button>
-          <button class="btn-small" style="background:var(--accent2); border:none; color:#fff;" onclick="copyTdxComment('${ticket.id}')">📋 Copy for Manual Posting</button>
+      <div style="display:flex; flex-direction:column; gap:4px; margin-top:10px;">
+        <span style="font-size:11px; color:var(--accent); font-weight:800; border:1px solid var(--accent); padding:4px 8px; border-radius:4px; background:rgba(255,50,50,0.1);">⚠️ IMPORTANT: Manually append your signature/name when pasting into TeamDynamix!</span>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+          <span style="font-size:10px; color:var(--text2); opacity:0.6;">The AI-drafted response is a recommendation only.</span>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-small" style="background:transparent; border:1px solid var(--border);" onclick="this.parentElement.parentElement.parentElement.classList.add('hidden')">Cancel</button>
+            <button class="btn-small" style="background:var(--accent2); border:none; color:#fff;" onclick="copyTdxComment('${ticket.id}')">📋 Copy for Manual Posting</button>
+          </div>
         </div>
       </div>
     </div>
@@ -2221,7 +2224,7 @@ async function generateAIBriefing(ticket, retryCount = 0) {
   
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for deep analysis
+    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout for deep analysis of long ticket histories
     
     const res = await fetch('/api/ai/generate', {
       method: 'POST',
