@@ -1,16 +1,18 @@
 import subprocess
+import logging
+import time
 import scraper
 import json
 import os
 import requests
 import csv
 import uuid
-from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Depends, Request
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
 import secrets
 from datetime import datetime, timedelta
 import database
@@ -362,10 +364,19 @@ def login(payload: LoginPayload):
     except Exception as e:
         return {"status": "error", "message": "An unexpected error occurred during login."}
 
-def get_session_user(token: str = Query(None)):
-    if not token or token not in SESSIONS:
+def get_session_user(request: Request, token: str = Query(None)):
+    # 1. Check Query Param
+    final_token = token
+    
+    # 2. Check Authorization Header if Query Param is missing
+    if not final_token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            final_token = auth_header[7:]
+    
+    if not final_token or final_token not in SESSIONS:
         raise HTTPException(status_code=401, detail="Unauthorized session. Please log in.")
-    return SESSIONS[token]
+    return SESSIONS[final_token]
 
 @app.get("/api/ise/{mac}")
 def get_ise(mac: str, user=Depends(get_session_user)):

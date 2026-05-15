@@ -1045,7 +1045,7 @@ async function searchSCCMTab() {
   const endpoint = isMac ? `/api/sccm/mac/${encodeURIComponent(query)}` : `/api/sccm/pc/${encodeURIComponent(query)}`;
 
   try {
-    const res = await fetch(endpoint);
+    const res = await fetch(`${endpoint}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       renderSCCMResults(data.data);
@@ -1163,7 +1163,7 @@ async function searchMistTab() {
   resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Querying Mist Cloud API...</h3></div>';
 
   try {
-    const res = await fetch(`/api/mist/${query}`);
+    const res = await fetch(`/api/mist/${query}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       renderMistResults(data.data);
@@ -1360,7 +1360,7 @@ async function searchIseTab() {
   resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">🛡️</div><h3>Querying Cisco Identity Services Engine (ISE)...</h3></div>';
 
   try {
-    const res = await fetch(`/api/ise/${query}`);
+    const res = await fetch(`/api/ise/${query}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       renderIseResults(data.data);
@@ -1985,7 +1985,7 @@ async function loadTickets() {
   listEl.innerHTML = '<div class="ticket-placeholder" style="height:auto; padding:40px;"><div class="placeholder-icon" style="font-size:32px;">⏳</div><p>Fetching tickets...</p></div>';
   
   try {
-    const res = await fetch('/api/tdx/tickets');
+    const res = await fetch(`/api/tdx/tickets?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       activeTickets = data.data;
@@ -2125,7 +2125,7 @@ async function showTicketDetail(id) {
 
 async function matchKnowledgeBase(ticket) {
   try {
-    const res = await fetch(`/api/kb/search?q=${encodeURIComponent(ticket.title)}`);
+    const res = await fetch(`/api/kb/search?q=${encodeURIComponent(ticket.title)}&token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success' && data.results.length > 0) {
       const container = document.getElementById('kbSuggestionsContainer');
@@ -2477,7 +2477,7 @@ async function loadFloorPlans() {
   container.innerHTML = '<p style="padding:20px; color:var(--text2);">Loading maps...</p>';
   
   try {
-    const res = await fetch('/api/wayfinding/list');
+    const res = await fetch(`/api/wayfinding/list?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       allFloorPlans = data.data;
@@ -3930,7 +3930,7 @@ async function fetchUserSCCM(starId) {
 async function fetchUserTDX(starId, name) {
   const container = document.getElementById('prof-tdx');
   try {
-    const res = await fetch('/api/tdx/tickets');
+    const res = await fetch(`/api/tdx/tickets?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       const userTickets = data.data.filter(t => t.requestor.toLowerCase().includes(starId.toLowerCase()) || name.toLowerCase().includes(t.requestor.toLowerCase()));
