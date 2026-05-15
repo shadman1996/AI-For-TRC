@@ -507,8 +507,14 @@ def find_directory_match(ad_display_name, ad_starid, faculty_list):
 # Active Directory Query via PowerShell (Flexible Search)
 @app.get("/api/ad/{query}")
 def query_ad(query: str, user=Depends(get_session_user)):
+    # Decode URL-encoded query (e.g., %20 -> space)
+    query = urllib.parse.unquote(query).strip()
+    
     # Build a flexible AD filter for multi-word name searches
-    words = [w for w in query.strip().split() if w]
+    words = [w for w in query.split() if w]
+    if not words:
+        return {"status": "error", "message": "Empty search query."}
+        
     name_filter = "".join([f"(displayname=*{w}*)" for w in words])
     
     # Combined filter: Match StarID OR (All name words) OR Email
@@ -516,7 +522,7 @@ def query_ad(query: str, user=Depends(get_session_user)):
     
     ps_script = f"""
     $searcher = New-Object DirectoryServices.DirectorySearcher
-    $searcher.Filter = '{filter_str}'
+    $searcher.Filter = "{filter_str}"
     $searcher.PropertiesToLoad.Add("samaccountname") | Out-Null
     $searcher.PropertiesToLoad.Add("displayname") | Out-Null
     $searcher.PropertiesToLoad.Add("title") | Out-Null
