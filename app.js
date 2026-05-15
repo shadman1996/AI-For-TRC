@@ -1886,6 +1886,100 @@ function renderFormGuide() {
 // ----- TICKETS LOGIC -----
 let activeTickets = [];
 
+async function suggestTdxComment(ticketId) {
+  const ticket = activeTickets.find(t => t.id === ticketId);
+  if (!ticket) return;
+
+  const area = document.getElementById(`aiCommentArea-${ticketId}`);
+  const textarea = document.getElementById(`aiDraftComment-${ticketId}`);
+  
+  area.classList.remove('hidden');
+  textarea.value = "Generating draft fix...";
+  textarea.disabled = true;
+
+  try {
+    const prompt = `Based on this ticket description: "${ticket.description}", suggest a professional technical comment/fix to post for the user. Include any relevant TRC procedures if applicable. Output ONLY the comment body, no other text.`;
+    const res = await fetch('/api/ai/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, token: currentUser ? currentUser.token : null })
+    });
+    const data = await res.json();
+    textarea.value = data.response.trim();
+  } catch (e) {
+    textarea.value = "Failed to generate suggestion. Please write your comment manually.";
+  } finally {
+    textarea.disabled = false;
+  }
+}
+
+async function postTdxComment(ticketId) {
+  const textarea = document.getElementById(`aiDraftComment-${ticketId}`);
+  const comment = textarea.value.trim();
+  if (!comment) return;
+
+  const btn = event.target;
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = "⏳ Posting...";
+
+  try {
+    const res = await fetch(`/api/tdx/tickets/${ticketId}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment, is_private: false })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast("Comment successfully posted to TDX!", "success");
+      document.getElementById(`aiCommentArea-${ticketId}`).classList.add('hidden');
+      loadTicketFeed(ticketId); // Refresh the feed to show the new comment
+    } else {
+      showToast(data.message || "Failed to post to TDX", "error");
+    }
+  } catch (e) {
+    showToast("Connection error to TDX API", "error");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+  }
+}
+
+async function loadTicketFeed(ticketId) {
+  const feedList = document.getElementById(`ticketFeedList-${ticketId}`);
+  feedList.innerHTML = '<div style="font-size:12px; color:var(--text2);">⏳ Loading live feed...</div>';
+
+  try {
+    const res = await fetch(`/api/tdx/tickets/${ticketId}/feed`);
+    const data = await res.json();
+    if (data.status === 'success') {
+      feedList.innerHTML = '';
+      data.data.forEach(entry => {
+        const div = document.createElement('div');
+        div.style.background = 'rgba(255,255,255,0.02)';
+        div.style.padding = '10px';
+        div.style.borderRadius = '8px';
+        div.style.border = '1px solid rgba(255,255,255,0.05)';
+        
+        const dateStr = new Date(entry.date).toLocaleString();
+        div.innerHTML = `
+          <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+            <strong style="font-size:11px; color:var(--accent);">${entry.author}</strong>
+            <span style="font-size:10px; color:var(--text2); opacity:0.6;">${dateStr}</span>
+          </div>
+          <div style="font-size:12px; line-height:1.4;">${entry.text}</div>
+        `;
+        feedList.appendChild(div);
+      });
+      if (data.data.length === 0) {
+         feedList.innerHTML = '<p style="font-size:12px; color:var(--text2);">No activity recorded in feed yet.</p>';
+      }
+    }
+  } catch (e) {
+    feedList.innerHTML = '<p style="font-size:12px; color:var(--red);">Failed to sync feed.</p>';
+  }
+}
+
 async function loadTickets() {
   const listEl = document.getElementById('ticketsList');
   listEl.innerHTML = '<div class="ticket-placeholder" style="height:auto; padding:40px;"><div class="placeholder-icon" style="font-size:32px;">⏳</div><p>Fetching tickets...</p></div>';
@@ -1914,10 +2008,11 @@ function renderTicketList(tickets) {
     
     const statusClass = ticket.status.toLowerCase().includes('process') ? 'status-process' : 'status-new';
     const priorityClass = ticket.priority.toLowerCase() === 'high' ? 'priority-high' : '';
+    const sourceBadge = ticket.source === 'LIVE' ? '<span class="badge-live">LIVE</span>' : '';
     
     card.innerHTML = `
       <div class="ticket-card-header">
-        <span class="ticket-id">#${ticket.id}</span>
+        <span class="ticket-id">#${ticket.id} ${sourceBadge}</span>
         <span class="ticket-status ${statusClass}">${ticket.status}</span>
       </div>
       <div class="ticket-card-title">${ticket.title}</div>
@@ -1992,8 +2087,30 @@ async function showTicketDetail(id) {
     
     <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
       <button class="btn-small" style="background:var(--accent); border:none; color:#fff;" onclick="askAIAboutTicket()">💬 Ask AI About This</button>
-      <a href="https://services.smsu.edu/TDNext/Apps/181/Tickets/TicketDet?TicketID=${ticket.id}" target="_blank" class="btn-small" style="text-decoration:none; color:var(--text);">📝 Update in TDX</a>
+      <button class="btn-small" style="background:var(--accent2); border:none; color:#fff;" onclick="suggestTdxComment('${ticket.id}')">🤖 Suggest Fix & Comment</button>
+      <a href="https://services.smsu.edu/TDNext/Apps/181/Tickets/TicketDet?TicketID=${ticket.id}" target="_blank" class="btn-small" style="text-decoration:none; color:var(--text);">📝 Open in TDX Next</a>
       ${reqStarId ? `<button class="btn-small" onclick="switchView('chat'); document.getElementById('userInput').value='find ${reqStarId}'; sendMessage();">🔎 Lookup ${reqStarId}</button>` : ''}
+      <button class="btn-small" onclick="loadTicketFeed('${ticket.id}')">🔄 Refresh Feed</button>
+    </div>
+
+    <!-- AI Comment Suggestion Area -->
+    <div id="aiCommentArea-${ticket.id}" class="hidden" style="margin-top:20px; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:12px; padding:15px; animation: slideIn 0.3s ease-out;">
+      <div style="font-size:11px; color:var(--accent2); margin-bottom:10px; font-weight:700;">🤖 AI SUGGESTED COMMENT</div>
+      <textarea id="aiDraftComment-${ticket.id}" style="width:100%; height:120px; background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; color:#fff; padding:10px; font-family:inherit; font-size:13px; resize:vertical;"></textarea>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+        <span style="font-size:10px; color:var(--text2); opacity:0.6;">* Signature with your name will be auto-appended</span>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-small" style="background:transparent; border:1px solid var(--border);" onclick="this.parentElement.parentElement.parentElement.classList.add('hidden')">Cancel</button>
+          <button class="btn-small" style="background:var(--green); border:none; color:#fff;" onclick="postTdxComment('${ticket.id}')">Post to TDX Feed</button>
+        </div>
+      </div>
+    </div>
+    
+    <div id="ticketFeedContainer-${ticket.id}" style="margin-top:20px;">
+       <h4 style="font-size: 11px; color: var(--text2); text-transform:uppercase; letter-spacing:1px;">Activity Feed</h4>
+       <div id="ticketFeedList-${ticket.id}" style="margin-top:10px; display:flex; flex-direction:column; gap:10px;">
+          <p style="font-size:12px; color:var(--text2); font-style:italic;">Click "Refresh Feed" to pull live comments...</p>
+       </div>
     </div>
     
     <div id="kbSuggestionsContainer" class="kb-suggestions hidden">
@@ -3510,23 +3627,58 @@ async function adminSearchCampus() {
     const data = await res.json();
     
     if (data.status === "success" && data.data) {
-      if (data.data.length === 0) {
-        container.innerHTML = `<div style="padding:20px; text-align:center; opacity:0.6;">❌ No users found in campus directory.</div>`;
+      const { users, assets, locations } = data.data;
+      if (users.length === 0 && assets.length === 0 && locations.length === 0) {
+        container.innerHTML = `<div style="padding:20px; text-align:center; opacity:0.6;">❌ No matching records found.</div>`;
         return;
       }
       
       let html = "";
-      data.data.forEach(user => {
-        html += `
-          <div style="display:flex; justify-content:space-between; align-items:center; padding: 12px; border-bottom:1px solid rgba(255,255,255,0.05);">
-            <div>
-              <div style="font-weight:600; color:var(--text);">${user.FullName || 'Unknown'}</div>
-              <div style="font-size:11px; opacity:0.6;">${user.StarID || 'No StarID'} — ${user.Title || 'No Title'}</div>
+      
+      if (users && users.length > 0) {
+        html += `<div style="margin-top:10px; font-size:11px; font-weight:700; opacity:0.5; padding:0 10px; text-transform:uppercase;">👤 People</div>`;
+        users.forEach(user => {
+          html += `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 12px; border-bottom:1px solid rgba(255,255,255,0.05);">
+              <div>
+                <div style="font-weight:600; color:var(--text);">${user.FullName || 'Unknown'}</div>
+                <div style="font-size:11px; opacity:0.6;">${user.StarID || 'No StarID'} - ${user.Title || 'No Title'}</div>
+              </div>
+              <button class="btn-small" onclick="selectUserForAdmin('${user.StarID}')" style="background:var(--accent2); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;">Select</button>
             </div>
-            <button class="btn-small" onclick="selectUserForAdmin('${user.StarID}')" style="background:var(--accent2); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;">Select</button>
-          </div>
-        `;
-      });
+          `;
+        });
+      }
+
+      if (assets && assets.length > 0) {
+        html += `<div style="margin-top:15px; font-size:11px; font-weight:700; opacity:0.5; padding:0 10px; text-transform:uppercase;">💻 Assets</div>`;
+        assets.forEach(asset => {
+          html += `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 12px; border-bottom:1px solid rgba(255,255,255,0.05);">
+              <div>
+                <div style="font-weight:600; color:var(--accent2);">[${asset.Tag}] ${asset.Name || 'Device'}</div>
+                <div style="font-size:11px; opacity:0.6;">${asset.ProductModel} • ${asset.Status}</div>
+              </div>
+              <button class="btn-small" onclick="selectAssetForAdmin('${asset.Tag}')" style="background:var(--accent); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;">Trace</button>
+            </div>
+          `;
+        });
+      }
+
+      if (locations && locations.length > 0) {
+        html += `<div style="margin-top:15px; font-size:11px; font-weight:700; opacity:0.5; padding:0 10px; text-transform:uppercase;">📍 Locations</div>`;
+        locations.forEach(loc => {
+          html += `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding: 12px; border-bottom:1px solid rgba(255,255,255,0.05);">
+              <div>
+                <div style="font-weight:600; color:var(--text);">${loc.Name}</div>
+                <div style="font-size:11px; opacity:0.6;">${loc.Description || 'Campus Room'}</div>
+              </div>
+              <button class="btn-small" onclick="selectLocationForAdmin('${loc.Name}')" style="background:rgba(255,255,255,0.1); color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer;">Map</button>
+            </div>
+          `;
+        });
+      }
       container.innerHTML = html;
     } else {
       container.innerHTML = `<div style="padding:20px; text-align:center; color:var(--red);">Error: ${data.message}</div>`;

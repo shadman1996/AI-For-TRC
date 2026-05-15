@@ -2,8 +2,14 @@
 ## Executive Presentation — May 2026
 
 **Prepared by:** Shadman Ahsan, Technology Resource Center  
-**For:** ITS  Review  
+**For:** ITS Review  
 **Version:** 3.6.0 | **Status:** Production-Ready
+
+### **Why This Project Exists**
+As the **ITS Graduate Assistant**, my responsibility is to manage the day-to-day operations at the TRC and develop employment plans for our student workers. This AI Assistant was built to:
+1.  **Automate Training**: Helping student workers handle requests without constant supervision.
+2.  **Maintain Documentation**: Ensuring procedures are always current and accessible.
+3.  **Support the CIO**: Providing a high-level tool for deployment planning and institutional agility.
 
 ---
 
@@ -64,11 +70,14 @@ When a tech clicks on a ticket, the AI **reads the entire activity feed** and ge
 
 **Result:** A tech picking up a 36-day-old ticket with 11 comments can understand its full status in **5 seconds** instead of **5 minutes**.
 
-### 3. 🔍 Unified Directory & Device Intelligence
-- **AD Lookups**: Search any StarID → Name, Title, Department, Account Status
-- **SCCM/Jamf**: Device inventory, OS version, last user, remote actions
-- **Mist WiFi**: AP connection, signal strength, authentication status
-- **Cross-Platform Trace**: Map a user ➔ their devices ➔ their network location ➔ their switch port
+### 3. 🔍 Module 4: Institutional Intelligence (Unified Campus Search)
+*   **The Problem**: Newcomers have to navigate multiple isolated systems (Users, Assets, Locations) to find information.
+*   **The Solution**: A **Unified institutional Index** that queries everything in one go.
+*   **Feature**: One search bar for names, asset tags, or room numbers.
+*   **Newcomer Benefit**: Instantly find who is in what room, what equipment they have, and where a specific room is located without special training.
+*   **Integration**: Seamlessly directs users to the correct TDX forms, such as the **[Security/Service Access Form](https://services.smsu.edu/TDClient/180/Portal/Requests/TicketRequests/NewForm?ID=fmfEkeq8FVo_&RequestorType=Service)**.
+
+---
 
 ### 4. 🧭 Interactive AI Step-by-Step Wayfinding (v3.6.0)
 The AI is now a physical campus guide:

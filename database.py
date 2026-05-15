@@ -89,6 +89,18 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_asset_serial ON tdx_assets(serial)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_asset_name ON tdx_assets(name)")
 
+    # 5.5 TDX Locations Table (High-Speed SQL)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tdx_locations (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        description TEXT,
+        is_active TEXT,
+        address TEXT
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tdx_location_name ON tdx_locations(name)")
+
     # 6. Admin Audit Logs Table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS admin_audit_logs (
@@ -157,6 +169,20 @@ def migrate_csv_to_sqlite():
                     row.get("Attributes")
                 ))
             conn.executemany("INSERT OR REPLACE INTO tdx_assets VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", assets_to_insert)
+
+    # Sync Locations
+    locations_csv = os.path.join(tdx_dir, "TDXLocations.csv")
+    if os.path.exists(locations_csv):
+        print("Optimizing Campus Locations (CSV -> SQLite)...")
+        with open(locations_csv, "r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            locations_to_insert = []
+            for row in reader:
+                locations_to_insert.append((
+                    row.get("ID"), row.get("Name"), row.get("Description"),
+                    row.get("IsActive"), row.get("Address")
+                ))
+            conn.executemany("INSERT OR REPLACE INTO tdx_locations VALUES (?,?,?,?,?)", locations_to_insert)
 
     conn.commit()
     conn.close()
@@ -262,6 +288,52 @@ def query_tdx_asset(query_str):
             "Name": row["name"], "ProductModel": row["model"], "Manufacturer": row["manufacturer"],
             "Status": row["status"], "Location": row["location"], "Room": row["room"],
             "Owner": row["owner"], "OwnerDepartment": row["owner_dept"], "Source": "Indexed Asset Catalog"
+        })
+    return results
+
+def query_tdx_location(query_str):
+    query_str = query_str.lower().strip()
+    words = [w.strip() for w in query_str.split() if w.strip()]
+    if not words:
+        return []
+        
+    conn = get_db()
+    
+    # Check exact match for name (High priority)
+    if len(words) == 1:
+        exact = words[0]
+        exact_match = conn.execute("SELECT * FROM tdx_locations WHERE name = ? COLLATE NOCASE", (exact,)).fetchall()
+        if exact_match:
+            conn.close()
+            return [ {
+                "ID": row["id"], "Name": row["name"], "Description": row["description"],
+                "IsActive": row["is_active"], "Address": row["address"], "Source": "Exact Location Match"
+            } for row in exact_match ]
+
+        # If no exact, try partial
+        rows = conn.execute("""
+            SELECT * FROM tdx_locations 
+            WHERE name LIKE ? OR description LIKE ? OR address LIKE ?
+            LIMIT 10
+        """, (f"%{exact}%", f"%{exact}%", f"%{exact}%")).fetchall()
+    else:
+        # Dynamic SQL intersection for multi-word
+        sql = "SELECT * FROM tdx_locations WHERE "
+        conditions = []
+        params = []
+        for w in words:
+            conditions.append("(name LIKE ? OR description LIKE ? OR address LIKE ?)")
+            params.extend([f"%{w}%", f"%{w}%", f"%{w}%"])
+        sql += " AND ".join(conditions) + " LIMIT 10"
+        rows = conn.execute(sql, params).fetchall()
+        
+    conn.close()
+    
+    results = []
+    for row in rows:
+        results.append({
+            "ID": row["id"], "Name": row["name"], "Description": row["description"],
+            "IsActive": row["is_active"], "Address": row["address"], "Source": "Indexed Location Catalog"
         })
     return results
 

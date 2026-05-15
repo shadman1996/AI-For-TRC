@@ -1,65 +1,113 @@
 # 🧩 System Modules
+**Document Version:** 2.0 | Updated: May 15, 2026
 
-The TRC AI Assistant is built as a modular platform. Each module handles a specific enterprise integration or feature set.
+The TRC AI Assistant is built as a modular platform. Each module handles a specific enterprise integration or feature set. All credentials for external platforms are stored **AES-256 encrypted** in `config.json` and decrypted in memory at runtime only.
 
-## 1. 🛡️ Active Directory (AD) Module
-- **Purpose**: Core staff/student directory lookup.
-- **Integration**: Interfaces with the local Active Directory domain via PowerShell `Get-ADUser`.
-- **Capabilities**: Displays Name, Title, Department, Email, and Account Status (Locked/Unlocked).
-- **Admin Actions**: WAG and SysAdmin roles can Unlock accounts, Enable/Disable accounts, and Reset passwords — all gated by the **HITL WAG Approval Modal**.
+---
 
-## 2. 💻 SCCM (MECM) Module
-- **Purpose**: Device inventory and remote management for Windows endpoints.
-- **Integration**: Uses the **SCCM AdminService REST API** (`https://sccmpss.smsu.edu/AdminService/`).
-- **Features**: 
-    - Device hardware/OS lookup.
-    - Remote actions: Policy Sync, Update Scan, Software Eval, Force Reboot — all HITL-gated.
-    - ResourceID tracking for precise management.
-    - **Robust Two-Step MAC Lookup Pipeline**: Resolves strict OData multi-value filter blocks on `MACAddresses` arrays by mapping to `SMS_G_System_NETWORK_ADAPTER_CONFIGURATION`, then querying `SMS_R_System`.
+## 1. 🤖 AI Chat Assistant
+- **Purpose**: Natural language IT support for all TRC staff levels.
+- **Engine**: Ollama `phi3:mini` — runs **100% locally** on the TRC workstation. No data leaves campus.
+- **Capabilities**: Ticket classification, step-by-step resolution guidance, TDX form guidance, escalation paths.
+- **Fallback**: If Ollama is offline, the system degrades gracefully with a user-friendly message. All other modules remain functional.
 
-## 3. 🍎 Jamf Cloud Module
-- **Purpose**: Apple device management (iPads, MacBooks, iPhones) for campus hardware.
-- **Integration**: Connects to `smsu.jamfcloud.com` via Jamf API with stored credentials.
-- **Auto-Routing**: The Unified Trace Engine automatically routes Apple device queries to Jamf instead of SCCM based on device name or OS context.
-- **Data Points**: Device Name, Serial Number, OS Version, Last Check-in, Assigned User.
+---
 
-## 4. 🏇 StarID Portal Scraper
-- **Purpose**: Real-time "Deep Search" for StarID details.
-- **Integration**: Playwright-based headless browser scraper for `starid.minnstate.edu/admin`.
-- **Data Points**: TechID, Library Barcodes, ISRS Affiliation history, Password Expiry.
+## 2. 🎫 TDX Ticket Module (Live)
+- **Purpose**: Live ticket queue management and AI-assisted commenting.
+- **Integration**: TeamDynamix REST API at `https://services.smsu.edu/TDWebApi/api`
+- **Auth**: `BEID` + `WebServicesKey` via `/api/auth/loginadmin`. Bearer token cached in memory (1-hour expiry, auto-refresh).
+- **Ticket Filter**: Shows only **New (Status 1)** and **In Process (Status 2)** tickets — no resolved ticket clutter.
+- **AI Co-Pilot**:
+  - Fetches the last 10 feed entries (comments + status history) per ticket.
+  - AI determines current state, what's been tried, and who/what is the next step.
+  - Drafts a professional response for staff review before posting.
+- **Worker Attribution**: Every posted comment is signed `— Posted by [username] via TRC-AI Assistant`.
+- **Roles**: `helpdesk`, `tech`, `wag`, `sysadmin` — posting requires explicit human confirmation.
 
-## 5. 📡 Juniper Mist (WiFi)
-- **Purpose**: Troubleshooting campus wireless connectivity.
-- **Integration**: REST API connection to the Mist Cloud dashboard.
-- **Data Points**: RSSI signal strength, AP connection history, OS type, Authentication status.
-- **Auto-Fallback**: If a MAC address is not found in SCCM, the system automatically performs a live Mist WiFi lookup.
+---
 
-## 6. 🔒 Human-In-The-Loop (HITL) Governance Module
-- **Purpose**: Prevent unauthorized destructive actions — no remote changes without WAG approval.
-- **Mechanism**: All high-privilege operations (AD Unlock, AD Disable, PC Reboot, Password Reset) trigger a **WAG Approval Modal** requiring a secure PIN before the API call executes.
-- **Audit Trail**: Every approved action is logged in the in-memory `ADMIN_AUDIT_LOGS` and visible in the SysAdmin panel.
+## 3. 💻 SCCM Module
+- **Purpose**: Windows device inventory and remote management.
+- **Integration**: SCCM AdminService REST API (`https://sccmpss.smsu.edu/AdminService/`) + local WMI.
+- **Capabilities**: Device hardware/OS lookup, last logged-in user, serial number, IP address.
+- **Remote Actions** (HITL-gated): Policy Sync, Update Scan, Software Evaluation, Force Reboot.
+- **Two-Step MAC Lookup**: Resolves MAC addresses via `SMS_G_System_NETWORK_ADAPTER_CONFIGURATION` → `SMS_R_System`.
+- **Roles**: Read access — `tech+`. Remote actions — `wag`, `sysadmin`.
 
-## 7. 📖 Knowledge Base (KB) / FAQ
-- **Purpose**: Local documentation retrieval.
-- **Storage**: `trc_ai.db` SQLite database (migrated from legacy `kb.json`).
-- **AI Integration**: Uses fuzzy matching and LLM-based retrieval to find the most relevant IT procedures.
+---
 
-## 8. 🎫 TDX Ticket Briefing & Workflow Engine
-- **Purpose**: Providing techs with an instant, actionable summary of any ticket's current state — eliminating the need to read through the entire TDX feed before starting work.
-- **Integration**: Connects to the TeamDynamix API for ticket data and activity feed.
-- **AI Briefing (v3.6.0)**: Ingests the full ticket activity feed (comments + status changes) and generates a structured four-section briefing:
-    - **📍 Current State**: What has been done so far and who was the last person to act.
-    - **🔧 Tech Action Items**: What the tech picking up this ticket should do RIGHT NOW.
-    - **⚠️ Escalation Path**: Who to contact if the issue can't be resolved at this level.
-    - **📋 Closing Notes**: What information to include when updating or closing the ticket.
-- **Smart Triage Fallback**: When the AI engine is unavailable, the system automatically matches the ticket's service category against the FAQ_DATA library and displays matched procedures, resolution steps, TDX form fields, and escalation contacts.
-- **Activity Feed Timeline**: Renders a scrollable, color-coded timeline of all comments (💬) and status changes (🔄) with author names and timestamps.
-- **Ask AI About This**: Sends full ticket context (ID, requestor, priority, service, description, feed) directly to the AI stream, bypassing frontend intent detectors.
-- **Quick Actions**: One-click buttons for StarID profile lookup, TDX deep link, and AI chat handoff.
+## 4. 🍎 Jamf Cloud Module
+- **Purpose**: Apple device management (iPads, MacBooks, iPhones).
+- **Integration**: Jamf Cloud API (`smsu.jamfcloud.com`) via AES-256 encrypted Bearer token.
+- **Auto-Routing**: The Unified Trace Engine automatically routes Apple device queries to Jamf instead of SCCM.
+- **Data Points**: Device name, serial number, OS version, last check-in, assigned user.
+- **Scope**: Read-only. No device configuration changes via the AI.
+- **Roles**: `tech`, `wag`, `sysadmin`.
 
-## 9. 🧠 Prompt Enrichment & Augmented Context Layer
-- **Purpose**: Fully bridge and cross-connect campus rooms, networks, staff directories, and devices for zero-hallucination AI chat.
-- **Pipeline**: Scans conversational queries in real-time before passing them to the local model to inject highly accurate, localized facts:
-    - **IP Subnets**: Automatically detects IP formats; maps `10.5.x.x` subnets to internal workstations and `137.192.x.x` to the public campus network.
-    - **Room & Directory mapping**: Resolves physical room codes (e.g. `SC 219`); joins the local Web Directory to list active staff in that office.
-    - **Network Ports**: Intercepts ethernet drop/patching requests to feed the correct ITS Network Operations procedures into the context.
+---
+
+## 5. 🗂️ Active Directory (AD) Module
+- **Purpose**: Staff/student identity lookup and account management.
+- **Integration**: PowerShell `Get-ADUser` via the campus-joined workstation session. No separate AD credentials stored.
+- **Read Capabilities**: Full name, title, department, email, account lockout status.
+- **Admin Actions** (HITL-gated): Account unlock, enable/disable, password reset — require WAG Approval.
+- **Roles**: Read — `helpdesk+`. Admin actions — `wag`, `sysadmin`.
+
+---
+
+## 6. 🔍 StarID Portal Deep Search
+- **Purpose**: Real-time deep lookup for StarID details not available in standard AD.
+- **Integration**: Playwright headless browser scraper (`scraper.py`) authenticated with encrypted `vg6340ah` StarID Admin credentials.
+- **Data Points**: TechID, library barcodes, ISRS affiliation history, password expiry.
+- **Privacy**: Data is displayed transiently and **never written to the database**.
+- **Roles**: `tech`, `wag`, `sysadmin`.
+
+---
+
+## 7. 📡 Juniper Mist WiFi Module
+- **Purpose**: Campus wireless diagnostics.
+- **Integration**: Mist Cloud REST API with AES-256 encrypted API token.
+- **Data Points**: Client RSSI, AP association, roaming history, OS type, authentication status.
+- **Auto-Fallback**: If a MAC isn't found in SCCM, the Unified Trace Engine automatically tries Mist.
+- **Scope**: Read-only. No AP configuration changes via the AI.
+- **Roles**: `tech`, `wag`, `sysadmin`.
+
+---
+
+## 8. 🛡️ Cisco ISE Module
+- **Purpose**: Network endpoint security lookups — device posture and VLAN assignment.
+- **Integration**: Cisco ISE ERS REST API at `https://ise.smsu.edu` with AES-256 encrypted credentials.
+- **Data Points**: Endpoint authentication status, VLAN assignment, MAC-based posture.
+- **Scope**: Read-only. No VLAN changes or endpoint modifications via the AI.
+- **Roles**: `tech`, `wag`, `sysadmin`.
+
+---
+
+## 9. 🔒 Human-In-The-Loop (HITL) Governance
+- **Purpose**: Prevent unauthorized destructive actions. The AI cannot modify production systems autonomously.
+- **Mechanism**: All high-privilege operations trigger a confirmation gate before the API call executes.
+- **Covered Actions**: AD Unlock, AD Disable, Password Reset, SCCM Reboot, TDX comment posting.
+- **Audit Trail**: Every approved action is logged in `trc_ai.db` with username, role, action, and timestamp.
+
+---
+
+## 10. 📖 Knowledge Base (KB)
+- **Purpose**: Local IT documentation and procedure retrieval.
+- **Storage**: `trc_ai.db` SQLite database (49+ service categories based on historical ticket patterns).
+- **AI Integration**: Fuzzy matching + LLM-based retrieval to surface relevant IT procedures.
+- **Self-Learning**: Admins can type `"Learn this: [information]"` or drag-and-drop CSV/TXT/JSON files into chat to expand the KB.
+
+---
+
+## 11. 🗺️ Wayfinding Module
+- **Purpose**: Interactive step-by-step campus navigation.
+- **Capabilities**: Multi-phase walking directions, synchronized floor plan overlays, elevation/stairway intelligence, ASCII 3D voxel route projection.
+- **Roles**: Available to all users including `guest`.
+
+---
+
+## 12. 🧠 Unified Connectivity Trace Engine
+- **Purpose**: Cross-platform entity resolution — connect a user to their devices, location, and network status in a single query.
+- **Pipeline**: `AD → TDX → SCCM/Jamf → Cisco ISE → Juniper Mist`
+- **Capabilities**: IP subnet mapping, MAC-to-AP resolution, room-to-staff mapping, visual trace cards.

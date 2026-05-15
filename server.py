@@ -21,9 +21,51 @@ import math
 from collections import deque
 import security
 from security import SecurityManager
+from collections import defaultdict
+
+# --- SECURITY GUARD (Rate Limiting & Anti-Scanning) ---
+class SecurityGuard:
+    def __init__(self):
+        self.ip_request_counts = defaultdict(list)
+        self.blocked_ips = {}
+        self.reputation_penalty = defaultdict(int)
+        self.RATE_LIMIT = 60 # Requests per minute
+        self.PENALTY_THRESHOLD = 10 # 404s before blocking
+        self.BLOCK_DURATION = 600 # 10 minutes
+
+    def is_blocked(self, ip):
+        if ip in self.blocked_ips:
+            if time.time() < self.blocked_ips[ip]:
+                return True
+            else:
+                del self.blocked_ips[ip]
+        return False
+
+    def track_request(self, ip, is_404=False):
+        now = time.time()
+        self.ip_request_counts[ip] = [t for t in self.ip_request_counts[ip] if t > now - 60]
+        self.ip_request_counts[ip].append(now)
+
+        if is_404:
+            self.reputation_penalty[ip] += 1
+            if self.reputation_penalty[ip] > self.PENALTY_THRESHOLD:
+                self.blocked_ips[ip] = now + self.BLOCK_DURATION
+                logging.warning(f"SECURITY ALERT: Blocking IP {ip} for scanning activity.")
+                return False
+
+        if len(self.ip_request_counts[ip]) > self.RATE_LIMIT:
+            self.blocked_ips[ip] = now + 60 # Temporary 1-min block
+            return False
+        
+        return True
+
+guard = SecurityGuard()
 
 # Initialize Database
 database.init_db()
+
+from tdx_api import TDXConnector
+tdx_conn = TDXConnector()
 
 # Load Global Config (Decrypted via SecurityManager)
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
@@ -132,7 +174,11 @@ class AIAdapter:
             
             if data.get("devices"):
                 for d in data["devices"]:
-                    facts += f"- Device: {d.get('PCName') or d.get('Tag')}, Model: {d.get('Model')}, IP: {d.get('IPAddress')}, LastUser: {d.get('User')}\n"
+                    facts += f"- Device: {d.get('Name') or d.get('Tag')}, Model: {d.get('ProductModel')}, Status: {d.get('Status')}, Room: {d.get('Room')}\n"
+            
+            if data.get("location"):
+                loc = data["location"]
+                facts += f"- Location: {loc.get('Name')} ({loc.get('Description')}), Active: {loc.get('IsActive')}\n"
             
             if data.get("network"):
                 n = data["network"]
@@ -182,7 +228,7 @@ FLOOR_PLANS_DIR = r"c:\Users\wagahsan\OneDrive - Minnesota State\Desktop\Shadman
 if os.path.exists(FLOOR_PLANS_DIR):
     app.mount("/floorplans", StaticFiles(directory=FLOOR_PLANS_DIR), name="floorplans")
 
-# Enable CORS for local testing
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -190,6 +236,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Security Middleware
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    client_ip = request.client.host
+    
+    # 1. Check if IP is blocked
+    if guard.is_blocked(client_ip):
+        return JSONResponse(status_code=429, content={"detail": "Access restricted due to suspicious activity."})
+
+    # 2. Add security headers & track requests
+    try:
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Server"] = "TRC-Security-Gateway" # Cloaking
+
+        if response.status_code == 404:
+            guard.track_request(client_ip, is_404=True)
+        else:
+            guard.track_request(client_ip)
+
+        return response
+    except Exception as e:
+        # Prevent leaking stack traces to attackers
+        logging.error(f"Middleware error: {e}")
+        return JSONResponse(status_code=500, content={"detail": "Internal Security Error"})
 
 # In-memory session store (token -> {username, role})
 SESSIONS = {}
@@ -310,11 +383,22 @@ def get_admin_users(user=Depends(get_session_user)):
 
 @app.get("/api/admin/search-campus")
 def admin_search_campus(q: str, user=Depends(get_session_user)):
-    if user["role"] != "sysadmin":
-        raise HTTPException(status_code=403, detail="Forbidden.")
-    # Search the 10,000+ campus records
-    results = database.query_tdx_user(q)
-    return {"status": "success", "data": results}
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Restricted access.")
+    
+    # Unified "Newcomer-Friendly" Global Search
+    users = database.query_tdx_user(q)
+    assets = database.query_tdx_asset(q)
+    locations = database.query_tdx_location(q)
+    
+    return {
+        "status": "success",
+        "data": {
+            "users": users,
+            "assets": assets,
+            "locations": locations
+        }
+    }
 
 @app.get("/api/config")
 def get_config():
@@ -1506,100 +1590,113 @@ def save_system_config(payload: dict, user=Depends(get_session_user)):
     return {"status": "success"}
 
 @app.get("/api/tdx/tickets")
-def get_tdx_tickets():
-    # Load config
-    conf = {}
-    if os.path.exists("config_sys.json"):
-        with open("config_sys.json", "r", encoding="utf-8") as f:
-            conf = json.load(f)
+def get_tdx_tickets(user=Depends(get_session_user)):
+    """Fetches tickets from live TDX API if configured, otherwise falls back to local cache/mock."""
+    live_data = tdx_conn.get_tickets()
+    if live_data:
+        # Standardize live data to match UI expectations
+        formatted = []
+        for t in live_data:
+            formatted.append({
+                "id": str(t.get("ID")),
+                "title": t.get("Title"),
+                "status": t.get("StatusName"),
+                "priority": t.get("PriorityName"),
+                "requestor": t.get("RequestorName"),
+                "created": t.get("CreatedDate"),
+                "description": t.get("Description", ""),
+                "service": t.get("TypeName", "General Support"),
+                "source": "LIVE"
+            })
+        return {"status": "success", "data": formatted, "is_live": True}
     
-    app_id = conf.get("tdx_appid")
-    token = conf.get("tdx_token")
-    
-    if app_id and token and token != "DEMO":
-        # Real TeamDynamix Web API call to fetch active tickets
-        url = f"https://services.smsu.edu/TDWebApi/api/{app_id}/tickets/search"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-        # Pull up to 50 open/in-progress tickets
-        payload = {
-            "StatusIDs": [1, 2],  # New, In Progress
-            "MaxResults": 50
-        }
-        try:
-            res = requests.post(url, headers=headers, json=payload, timeout=5)
-            if res.status_code == 200:
-                return {"status": "success", "data": res.json()}
-        except Exception as e:
-            print(f"Failed to fetch live TDX API tickets: {e}")
-            
-    # Automated Live CSV Pipeline Ingestion (Bypasses SCCM/CIM Blocks to ensure live queues are always fresh)
-    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tickets_export.csv")
-    if os.path.exists(csv_path):
-        try:
-            import csv
-            from datetime import datetime
-            live_tickets = []
-            enriched_map = {t["id"]: t for t in MOCK_TICKETS}
-            
-            with open(csv_path, "r", encoding="utf-8") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    t_id = row.get("ID", "").replace('"', '').strip()
-                    resp_group = row.get("RespGroup", "")
-                    prim_resp = row.get("PrimResp", "")
-                    acct_dept = row.get("AcctDept", "")
-                    
-                    # Target TRC / relevant tickets
-                    if "TRC" in resp_group or "Technology Resource Center" in resp_group or "TRC" in acct_dept or t_id in enriched_map:
-                        if t_id in enriched_map:
-                            live_tickets.append(enriched_map[t_id])
-                        else:
-                            created_str = row.get("Modified", "2026-05-14 10:00")
-                            try:
-                                dt = datetime.strptime(created_str.replace('"', '').strip(), "%m/%d/%Y %H:%M")
-                                iso_date = dt.isoformat()
-                            except:
-                                iso_date = "2026-05-14T10:00:00"
-                                
-                            req = row.get("Requestor", "").replace('"', '').strip()
-                            title = row.get("Title", "").replace('"', '').strip()
-                            service = row.get("Service", "").replace('"', '').strip()
-                            status_val = "In Process" if "In Process" in row.get("Classification", "") or prim_resp != "Unassigned" else "New"
-                            
-                            live_tickets.append({
-                                "id": t_id,
-                                "title": title,
-                                "status": status_val,
-                                "priority": "Medium",
-                                "requestor": req if req else "anonymous",
-                                "created": iso_date,
-                                "description": f"Customer reported support inquiry concerning {service}. Automated queue synchronization from live CSV pipeline export.",
-                                "service": service,
-                                "feed": [
-                                    {"author": "System", "type": "status", "date": iso_date, "text": f"Pipeline integration import. Initialized service status."}
-                                ]
-                            })
-                            
-            # Return unique items maintaining customized items at the top to preserve demo flow
-            seen = set()
-            final_tickets = []
-            for t in MOCK_TICKETS:
-                if t["id"] not in seen:
-                    seen.add(t["id"])
-                    final_tickets.append(t)
-            for t in live_tickets:
-                if t["id"] not in seen:
-                    seen.add(t["id"])
-                    final_tickets.append(t)
-                    
-            return {"status": "success", "data": final_tickets[:97]} # Support up to 97 active items as observed in user prompt
-        except Exception as e:
-            print(f"Error reading production CSV pipeline: {e}")
+    # Fallback to Mock data if live API is offline
+    return {"status": "success", "data": MOCK_TICKETS, "is_live": False}
 
-    return {"status": "success", "data": MOCK_TICKETS}
+class TicketUpdatePayload(BaseModel):
+    comment: str
+    is_private: bool = False
+
+@app.post("/api/tdx/tickets/{ticket_id}/update")
+def update_tdx_ticket(ticket_id: str, payload: TicketUpdatePayload, user=Depends(get_session_user)):
+    """Adds a comment to a TDX ticket with individual worker attribution."""
+    if user["role"] not in ["sysadmin", "tech", "wag", "helpdesk"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Access restricted to TRC staff.")
+    
+    # AI-Assisted Attribution Signature
+    attribution = f"\n\n— Posted by {user['username']} via TRC-AI Assistant"
+    full_comment = payload.comment + attribution
+    
+    success = tdx_conn.add_comment(ticket_id, full_comment, is_private=payload.is_private)
+    
+    if success:
+        return {"status": "success", "message": "Comment posted successfully to TDX."}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to post comment to TeamDynamix API.")
+
+@app.get("/api/tdx/tickets/{ticket_id}/feed")
+def get_tdx_ticket_feed(ticket_id: str, user=Depends(get_session_user)):
+    """Fetches the live activity feed for a specific ticket."""
+    feed = tdx_conn.get_ticket_feed(ticket_id)
+    if feed:
+        formatted = []
+        for entry in feed:
+            formatted.append({
+                "author": entry.get("CreatorName"),
+                "type": "comment" if entry.get("ItemType") == 1 else "status",
+                "date": entry.get("CreatedDate"),
+                "text": entry.get("Body")
+            })
+        return {"status": "success", "data": formatted, "is_live": True}
+    
+    # Fallback to mock feed
+    for t in MOCK_TICKETS:
+        if t["id"] == ticket_id:
+            return {"status": "success", "data": t.get("feed", []), "is_live": False}
+    return {"status": "error", "message": "Ticket feed not found"}
+
+@app.get("/api/tdx/tickets/{ticket_id}/suggest")
+def suggest_tdx_comment(ticket_id: str, user=Depends(get_session_user)):
+    """AI Co-Pilot: Suggests a fix based on ticket description AND live activity feed."""
+    # 1. Fetch live details
+    tickets = tdx_conn.get_tickets()
+    ticket = next((t for t in tickets if str(t.get("ID")) == ticket_id), None)
+    
+    if not ticket:
+        ticket = next((t for t in MOCK_TICKETS if t["id"] == ticket_id), None)
+        if not ticket:
+            return {"status": "error", "message": "Ticket not found"}
+
+    # 2. Fetch activity feed for context
+    feed = tdx_conn.get_ticket_feed(ticket_id)
+    feed_context = ""
+    if feed:
+        feed_context = "\nRECENT ACTIVITY HISTORY:\n"
+        for entry in feed[:10]:
+            author = entry.get("CreatorName", "Technician")
+            body = entry.get("Body", "").strip()
+            if body:
+                feed_context += f"- {author}: {body}\n"
+
+    # 3. Build Intelligent Prompt
+    prompt = f"""
+    You are an AI Assistant for the SMSU Technology Resource Center (TRC).
+    Analyze the following TeamDynamix ticket and its history to suggest the NEXT professional step.
+    
+    TICKET: {ticket.get('Title')}
+    DESCRIPTION: {ticket.get('Description')}
+    CURRENT STATUS: {ticket.get('StatusName')}
+    {feed_context}
+    
+    GOAL:
+    - Determine what has already been tried.
+    - Identify if we are waiting for the customer or if a technician action is needed.
+    - Draft a professional, helpful response.
+    """
+    
+    suggestion = AIAdapter.generate(prompt)
+    return {"status": "success", "suggestion": suggestion}
+
 
 def _execute_tdx_ticket_creation(data: dict):
     # Core logic helper for ticket creation
@@ -2663,8 +2760,13 @@ def trace_unified_connectivity(query: str):
                 if user_lookup.get("status") == "success":
                     results["user"] = user_lookup["data"][0]
         
+    # Is it a Location / Room?
+    if not results["user"] and not results["devices"] and not results["network"]:
+        loc_results = database.query_tdx_location(q)
+        if loc_results:
+            results["location"] = loc_results[0]
+            
     # 2. ENRICH REMAINING LINKS
-    
     # If we have a device but no network info, try SCCM/Jamf/ISE
     if results["devices"] and not results["network"]:
         device_name = results["devices"][0].get("Tag") or results["devices"][0].get("Name")

@@ -1,133 +1,139 @@
 {
-  "ai_engine": {
-    "provider": "ollama",
-    "endpoint": "http://127.0.0.1:11434/api/generate",
-    "model": "phi3:mini"
-  },
-  "starid_admin": {
-    "username": "vg6340ah",
-    "password": "ENC(gAAAAABqBL6FZnaR6Fb-a6T6vxggmLwBOSBOF_0j1vwNAJCpQRc-YylWi4beuS2dBM9H6R9N1MFUfUj_BCDufBbf2Y7PuK2i5w==)"
-  },
-  "cisco_ise": {
-    "host": "ise.smsu.edu",
-    "username": "ise_admin",
-    "password": "ENC(gAAAAABqBL6F6EXyI8dAKyFmjMgwx1nk2CR-KrLU9-PcEbAOvX4Bvk4iolgPF9SlNk2rfo-QDYlkgD9lySso9gBOdH6xENGSo6eQaL_TdjW6bQiiMbkboaw=)"
-  },
-  "modules": [
-    {
-      "id": "chat",
-      "name": "AI Assistant",
-      "icon": "\ud83e\udd16"
+    "ai_engine": {
+        "provider": "ollama",
+        "endpoint": "http://127.0.0.1:11434/api/generate",
+        "model": "phi3:mini"
     },
-    {
-      "id": "tickets",
-      "name": "My Tickets",
-      "icon": "\ud83c\udfab"
+    "starid_admin": {
+        "username": "vg6340ah",
+        "password": "ENC(gAAAAABqBL6FZnaR6Fb-a6T6vxggmLwBOSBOF_0j1vwNAJCpQRc-YylWi4beuS2dBM9H6R9N1MFUfUj_BCDufBbf2Y7PuK2i5w==)"
     },
-    {
-      "id": "directory",
-      "name": "Directory",
-      "icon": "\ud83d\udcc7"
+    "cisco_ise": {
+        "host": "ise.smsu.edu",
+        "username": "ise_admin",
+        "password": "ENC(gAAAAABqBL6F6EXyI8dAKyFmjMgwx1nk2CR-KrLU9-PcEbAOvX4Bvk4iolgPF9SlNk2rfo-QDYlkgD9lySso9gBOdH6xENGSo6eQaL_TdjW6bQiiMbkboaw=)"
     },
-    {
-      "id": "sccm",
-      "name": "SCCM Tools",
-      "icon": "\ud83d\udcbb"
+    "modules": [
+        {
+            "id": "chat",
+            "name": "AI Assistant",
+            "icon": "\ud83e\udd16"
+        },
+        {
+            "id": "tickets",
+            "name": "My Tickets",
+            "icon": "\ud83c\udfab"
+        },
+        {
+            "id": "directory",
+            "name": "Directory",
+            "icon": "\ud83d\udcc7"
+        },
+        {
+            "id": "sccm",
+            "name": "SCCM Tools",
+            "icon": "\ud83d\udcbb"
+        },
+        {
+            "id": "ad",
+            "name": "AD & User Management",
+            "icon": "\ud83d\udd11"
+        },
+        {
+            "id": "mist",
+            "name": "Mist WiFi",
+            "icon": "\ud83d\udcf6"
+        },
+        {
+            "id": "ise",
+            "name": "Cisco ISE Security",
+            "icon": "\ud83d\udee1\ufe0f"
+        },
+        {
+            "id": "form",
+            "name": "TDX Form Guide",
+            "icon": "\ud83d\udccb"
+        },
+        {
+            "id": "links",
+            "name": "Quick Links",
+            "icon": "\ud83d\udd17"
+        },
+        {
+            "id": "wayfinding",
+            "name": "Wayfinding",
+            "icon": "\ud83d\uddfa\ufe0f"
+        },
+        {
+            "id": "jamf",
+            "name": "Jamf Cloud",
+            "icon": "\ud83c\udf4e"
+        },
+        {
+            "id": "settings",
+            "name": "Appearance Settings",
+            "icon": "\ud83c\udfa8"
+        }
+    ],
+    "default_module_permissions": {
+        "guest": [
+            "chat",
+            "directory",
+            "wayfinding",
+            "links"
+        ],
+        "helpdesk": [
+            "chat",
+            "tickets",
+            "directory",
+            "form",
+            "links",
+            "wayfinding"
+        ],
+        "tech": [
+            "chat",
+            "tickets",
+            "directory",
+            "form",
+            "links",
+            "sccm",
+            "mist",
+            "ise",
+            "jamf",
+            "wayfinding"
+        ],
+        "wag": [
+            "chat",
+            "tickets",
+            "directory",
+            "form",
+            "links",
+            "sccm",
+            "mist",
+            "ise",
+            "ad",
+            "jamf",
+            "wayfinding"
+        ],
+        "sysadmin": [
+            "chat",
+            "tickets",
+            "directory",
+            "form",
+            "links",
+            "sccm",
+            "mist",
+            "ise",
+            "ad",
+            "jamf",
+            "settings",
+            "wayfinding"
+        ]
     },
-    {
-      "id": "ad",
-      "name": "AD & User Management",
-      "icon": "\ud83d\udd11"
-    },
-    {
-      "id": "mist",
-      "name": "Mist WiFi",
-      "icon": "\ud83d\udcf6"
-    },
-    {
-      "id": "ise",
-      "name": "Cisco ISE Security",
-      "icon": "\ud83d\udee1\ufe0f"
-    },
-    {
-      "id": "form",
-      "name": "TDX Form Guide",
-      "icon": "\ud83d\udccb"
-    },
-    {
-      "id": "links",
-      "name": "Quick Links",
-      "icon": "\ud83d\udd17"
-    },
-    {
-      "id": "wayfinding",
-      "name": "Wayfinding",
-      "icon": "\ud83d\uddfa\ufe0f"
-    },
-    {
-      "id": "jamf",
-      "name": "Jamf Cloud",
-      "icon": "🍎"
-    },
-    {
-      "id": "settings",
-      "name": "Appearance Settings",
-      "icon": "\ud83c\udfa8"
+    "tdx": {
+        "beid": "ENC(gAAAAABqBzNC-x_pzQILAoSVDLCuaUTlWuVd4Jz1s5XBbIuy7ug-LsHBva6E5foHNXr7HrDgzZtJB9NwplkQBa7m4Nr655TiRbtqcnVSYsYDzCmZt_YyDFUVgRokCyNu35Pm2gSk354j)",
+        "wskey": "ENC(gAAAAABqBzNCFbyBKsGXhzQG3qQZVQ6SwwjNKbZcsAeoYbpcDGmNBpX59JQVu3Gw-57EClOR8a1HAEuSpGI7A_e4b6lhXAvplNpllqQcKT0ddYNJN8tnzj0rb9dQ0_A6niwZgAfQlw10)",
+        "appid": "182",
+        "ipaas_secret": "ENC(gAAAAABqBzNC9zIjx70l0bQb8kH1mhG8dmGBoUhVXzTJqv_ZtxpD3wuka8viN7ibZjO0z05oKARnjA_asBnFYySkOfj8n6W272ZFYIOhnMifphOe3AxCzrSiRU56Gj8w5NvG4yO2LXcH)"
     }
-  ],
-  "default_module_permissions": {
-    "guest": [
-      "chat",
-      "directory",
-      "wayfinding",
-      "links"
-    ],
-    "helpdesk": [
-      "chat",
-      "tickets",
-      "directory",
-      "form",
-      "links",
-      "wayfinding"
-    ],
-    "tech": [
-      "chat",
-      "tickets",
-      "directory",
-      "form",
-      "links",
-      "sccm",
-      "mist",
-      "ise",
-      "jamf",
-      "wayfinding"
-    ],
-    "wag": [
-      "chat",
-      "tickets",
-      "directory",
-      "form",
-      "links",
-      "sccm",
-      "mist",
-      "ise",
-      "ad",
-      "jamf",
-      "wayfinding"
-    ],
-    "sysadmin": [
-      "chat",
-      "tickets",
-      "directory",
-      "form",
-      "links",
-      "sccm",
-      "mist",
-      "ise",
-      "ad",
-      "jamf",
-      "settings",
-      "wayfinding"
-    ]
-  }
 }

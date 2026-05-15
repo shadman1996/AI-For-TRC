@@ -155,13 +155,22 @@
 
 > *"**Phase 5** — Move the AI to a dedicated SMSU server with a larger model. Right now it runs on a workstation — on a server with GPU acceleration, response times drop to under a second."*
 
-> *"**Phase 6** — Executive analytics. SLA monitoring, resolution time tracking, and trend detection to help leadership make data-driven staffing decisions."*
-
-> *"**Phase 7** — This framework is designed to be portable. Other MinnState campuses could adopt it for their own help desks."*
+> *"### **4. Unified Institutional Search (Newcomer Focus)**
+*   **Action**: Go to the **Admin Dashboard** → **Campus Directory Search**.
+*   **Demo**: Type a keyword like "iPad" or "BA".
+*   **Showcase**: Highlight how it instantly pulls from **TDX Users**, **TDX Assets**, and **TDX Locations** simultaneously. 
+*   **Voiceover**: *"As a newcomer, you don't need to know which system holds the data. One search gives you the person, their equipment, and their location instantly."*
 
 ---
 
-## Q&A
+### **5. Security/Service Access Request**
+*   **Action**: Ask the AI: *"How do I request system access?"*
+*   **Showcase**: The AI provides the direct **Security/Service Access Form** link.
+*   **Voiceover**: *"We've integrated specific institutional forms directly into the AI's knowledge base, ensuring staff are always one click away from the correct request pipeline."*
+
+---
+
+### **6. Closing & Strategic Roadmap**
 
 > *"I'm happy to take any questions. I can also show any specific feature in more detail if you'd like to see it."*
 
