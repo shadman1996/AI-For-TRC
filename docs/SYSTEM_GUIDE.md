@@ -80,3 +80,22 @@ All TDX comments posted via the AI are signed: `— Posted by [username] via TRC
 Double-click **`start_ai.bat`** — the server starts on `http://localhost:8001`.
 
 For coworker access on the campus LAN, run `setup_firewall.bat` once as Administrator to open Port 8001. The Admin Panel displays the live LAN URL for sharing.
+
+---
+
+## 🗺️ Roadmap: Phase 5 & 6 (Production & Agentic Expansion)
+Our next evolution focuses on transitioning from a local prototype to a high-performance campus production system.
+
+### **Phase 5: Production Migration**
+- **Server Deployment**: Migration from local workstation hosting to the dedicated SMSU production server.
+- **Model Upgrade**: Scaling the local AI engine to **Llama3 (8B)** or **Mistral** for enhanced technical reasoning.
+- **SSO Integration**: Implementing Active Directory Single Sign-On (SSO) for a seamless "One-Click" staff login experience.
+
+### **Phase 6: Agentic Maintenance & System Doctor**
+- **System Doctor Module**: Enabling the AI to analyze its own server logs (`server.log`) and telemetry to diagnose performance issues.
+- **Patch Lab**: Introducing a "Human-in-the-Loop" code patching interface where the AI suggests platform fixes for staff approval.
+- **Self-Optimization**: Autonomous monitoring of database health and API response times with intelligent optimization suggestions.
+
+---
+
+**Institutional Mandate:** This platform remains a **Local-First** system. No institutional data, StarIDs, or device telemetry shall leave the SMSU campus network.
