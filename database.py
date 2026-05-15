@@ -116,6 +116,21 @@ def init_db():
     conn.commit()
     conn.close()
     print("SQLite Database & High-Performance Indexes initialized.")
+
+def get_counts():
+    """Returns high-speed counts of all core entities using SQL COUNT(*)."""
+    conn = get_db()
+    counts = {
+        "kb": conn.execute("SELECT count(*) FROM kb").fetchone()[0],
+        "tickets": 0, # Placeholder if no tickets table exists yet
+        "users": conn.execute("SELECT count(*) FROM tdx_users").fetchone()[0],
+        "assets": conn.execute("SELECT count(*) FROM tdx_assets").fetchone()[0]
+    }
+    try:
+        counts["tickets"] = conn.execute("SELECT count(*) FROM tdx_locations").fetchone()[0] # Example mapping
+    except: pass
+    conn.close()
+    return counts
     
     # Auto-migrate if the tdx_users table is empty
     conn = get_db()

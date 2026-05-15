@@ -261,7 +261,7 @@ function toggleSidebar(open) {
   }
 }
 
-function switchView(viewId) {
+async function switchView(viewId) {
   if (viewId === currentView) {
     if (window.innerWidth <= 1024) toggleSidebar(false);
     return;
@@ -285,19 +285,20 @@ function switchView(viewId) {
 
   if (window.innerWidth <= 1024) toggleSidebar(false);
 
+  // Sequential loading to prevent browser connection jams
   if (viewId === 'tickets') {
-    loadTickets();
+    await loadTickets();
   }
   if (viewId === 'wayfinding') {
-    loadFloorPlans();
+    await loadFloorPlans();
   }
   if (viewId === 'settings') {
-    fetchDeploymentInfo();
+    await fetchDeploymentInfo();
   }
   if (viewId === 'ad') {
-    fetchDeploymentInfo();
-    loadAuditLogs();
-    loadSysAdminGlimpse();
+    await fetchDeploymentInfo();
+    await loadAuditLogs();
+    await loadSysAdminGlimpse();
   }
 }
 

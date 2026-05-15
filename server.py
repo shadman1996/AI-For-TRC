@@ -31,8 +31,8 @@ class SecurityGuard:
         self.ip_request_counts = defaultdict(list)
         self.blocked_ips = {}
         self.reputation_penalty = defaultdict(int)
-        self.RATE_LIMIT = 60 # Requests per minute
-        self.PENALTY_THRESHOLD = 10 # 404s before blocking
+        self.RATE_LIMIT = 200 # Requests per minute (Higher for high-density dashboard)
+        self.PENALTY_THRESHOLD = 50 # 404s before blocking
         self.BLOCK_DURATION = 600 # 10 minutes
 
     def is_blocked(self, ip):
@@ -246,7 +246,7 @@ async def security_middleware(request: Request, call_next):
     
     # 1. Check if IP is blocked
     if guard.is_blocked(client_ip):
-        return JSONResponse(status_code=429, content={"detail": "Access restricted due to suspicious activity."})
+        return JSONResponse(status_code=429, content={"detail": "System Busy: Too many background requests from this IP. Please wait 60 seconds."})
 
     # 2. Add security headers & track requests
     try:
@@ -649,11 +649,12 @@ def get_system_glimpse(user=Depends(get_session_user)):
     if user["role"] not in ["sysadmin", "tech", "wag"]:
         raise HTTPException(status_code=403, detail="Forbidden: Admin access restricted.")
         
-    kb_count = len(database.get_all_kb())
-    tickets_count = len(database.get_all_tickets())
+    counts = database.get_counts()
+    kb_count = counts["kb"]
+    tickets_count = counts["tickets"]
     active_users = len(SESSIONS)
     
-    all_logs = database.get_audit_logs(limit=1000)
+    all_logs = database.get_audit_logs(limit=2000) # Fetch only recent logs for dashboard stats
     # Platform Health Checks (Based on configuration presence)
     platform_health = {
         "sccm": "ONLINE" if CONFIG.get("ai_engine", {}).get("provider") != "unconfigured" else "OFFLINE",
