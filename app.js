@@ -922,19 +922,20 @@ async function scrapePortal(starid) {
 // ----- DIRECTORY TAB LOGIC -----
 async function searchDirectoryTab() {
   const input = document.getElementById('dirSearchInput');
-  const query = input.value.trim();
-  if (!query) return;
+  const rawQuery = input.value.trim();
+  if (!rawQuery) return;
 
+  // 1. Clean the query - Strip natural language prefixes (find, search, who is, etc.)
+  let cleanQuery = rawQuery.replace(/^(find|search|lookup|who is|show me|get|is)\s+/i, '').trim();
+  
   const resultsEl = document.getElementById('directoryResults');
   
-  // Smart intent detection: redirect non-name queries to AI chat
-  const queryLower = query.toLowerCase();
-  const navKeywords = ['go to', 'where is', 'directions', 'how to get', 'how do i get', 'navigate', 'find the', 'library', 'building', 'office', 'room', 'parking', 'help me', 'i want', 'i need', 'what is', 'how do', 'can you', 'tell me'];
+  // 2. Smart intent detection: redirect non-name queries to AI chat
+  const queryLower = cleanQuery.toLowerCase();
+  const navKeywords = ['go to', 'where is', 'directions', 'how to get', 'how do i get', 'navigate', 'library', 'building', 'office', 'room', 'parking', 'help me', 'i want', 'i need', 'what is', 'how do', 'can you', 'tell me'];
   const isNavQuery = navKeywords.some(kw => queryLower.includes(kw));
-  // Also detect if query is too long to be a name (names are usually < 5 words)
-  const wordCount = query.split(/\s+/).length;
-  // Precise Campus Wayfinding detection for room codes like st269, ba200, ch128
-  const isRoomCode = /^[a-zA-Z]{2,3}\d{1,4}$/.test(query);
+  const wordCount = cleanQuery.split(/\s+/).length;
+  const isRoomCode = /^[a-zA-Z]{2,3}\d{1,4}$/.test(cleanQuery);
   
   if (isNavQuery || wordCount > 5 || isRoomCode) {
     resultsEl.innerHTML = `
@@ -942,15 +943,15 @@ async function searchDirectoryTab() {
         <div class="placeholder-icon" style="font-size: 48px; margin-bottom: 12px;">🗺️</div>
         <h3 style="color: var(--accent2); font-size: 18px; margin-bottom: 8px;">Campus Wayfinding Target Detected</h3>
         <p style="color: var(--text2); font-size: 13px; line-height: 1.5; margin-bottom: 16px;">
-          <strong>"${query.toUpperCase()}"</strong> corresponds to a campus location query rather than a directory profile.<br>Let's map out an interactive step-by-step visual map route!
+          <strong>"${cleanQuery.toUpperCase()}"</strong> corresponds to a campus location query rather than a directory profile.<br>Let's map out an interactive step-by-step visual map route!
         </p>
         <div style="display: flex; flex-direction: column; gap: 10px;">
           <button class="btn-primary" style="background: var(--accent2); border: none; padding: 12px; border-radius: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;"
-            onclick="launchCustomWayfindingRoute('${query.toUpperCase()}')">
+            onclick="launchCustomWayfindingRoute('${cleanQuery.toUpperCase()}')">
             🧭 Generate Step-by-Step AI Map Route
           </button>
           <button class="btn-small" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 12px; cursor: pointer;"
-            onclick="switchView('chat'); document.getElementById('userInput').value='${query.replace(/'/g, "\\'")}'; sendMessage();">
+            onclick="switchView('chat'); document.getElementById('userInput').value='${cleanQuery.replace(/'/g, "\\'")}'; sendMessage();">
             💬 Ask AI Assistant in Chat
           </button>
         </div>
@@ -961,7 +962,7 @@ async function searchDirectoryTab() {
   resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Searching Campus Directory...</h3></div>';
 
   try {
-    const res = await fetch(`/api/ad/${query}?token=${currentUser.token}`);
+    const res = await fetch(`/api/ad/${encodeURIComponent(cleanQuery)}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success') {
       renderDirectoryResults(data.data, data.source);
