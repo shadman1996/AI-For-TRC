@@ -106,47 +106,21 @@ class TDXConnector:
         except Exception as e:
             return []
 
-    def add_comment(self, ticket_id, body, is_private=False):
-        """Adds a comment to a ticket feed."""
+    def get_ticket_feed(self, ticket_id):
+        """Fetches the activity feed for a specific ticket."""
         token = self.get_token()
-        if not token: return False
+        if not token: return []
 
         url = f"{self.base_url}/{self.appid}/tickets/{ticket_id}/feed"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
-        
-        payload = {
-            "Body": body,
-            "IsPrivate": is_private,
-            "Notify": [] # Can be extended to notify requestor etc.
-        }
 
         try:
-            res = requests.post(url, json=payload, headers=headers, timeout=10)
-            return res.status_code in [200, 201]
+            res = requests.get(url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                return res.json()
+            return []
         except Exception as e:
-            logging.error(f"TDX Comment Exception: {str(e)}")
-            return False
-
-    def trigger_ipaas_flow(self, flow_id, payload):
-        """Triggers a TDX iPaaS flow using the secret key."""
-        if not self.ipaas_secret:
-            logging.error("TDX iPaaS Secret missing")
-            return None
-
-        secret = self._decrypt_value(self.ipaas_secret)
-        url = f"https://us1.teamdynamix.com/tdapp/app/flow/api/2/start/{flow_id}" # Example URL pattern
-        
-        headers = {
-            "X-TdxiPaaS-Secret": secret,
-            "Content-Type": "application/json"
-        }
-
-        try:
-            res = requests.post(url, json=payload, headers=headers, timeout=10)
-            return res.json()
-        except Exception as e:
-            logging.error(f"TDX iPaaS Exception: {str(e)}")
-            return None
+            return []

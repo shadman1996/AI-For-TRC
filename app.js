@@ -1913,35 +1913,46 @@ async function suggestTdxComment(ticketId) {
   }
 }
 
-async function postTdxComment(ticketId) {
+function copyTdxComment(ticketId) {
   const textarea = document.getElementById(`aiDraftComment-${ticketId}`);
   const comment = textarea.value.trim();
-  if (!comment) return;
+  if (!comment) {
+    showToast("Nothing to copy", "error");
+    return;
+  }
 
-  const btn = event.target;
-  const originalText = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = "⏳ Posting...";
+  // 1. Try modern clipboard API
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(comment).then(() => {
+      showToast("Suggestion copied! Paste it manually in TDX.", "success");
+      highlightTdxLink(ticketId);
+    }).catch(err => useLegacyCopy(textarea, ticketId));
+  } else {
+    // 2. Fallback for non-secure contexts (HTTP)
+    useLegacyCopy(textarea, ticketId);
+  }
+}
 
+function useLegacyCopy(textarea, ticketId) {
   try {
-    const res = await fetch(`/api/tdx/tickets/${ticketId}/update`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comment, is_private: false })
-    });
-    const data = await res.json();
-    if (data.status === 'success') {
-      showToast("Comment successfully posted to TDX!", "success");
-      document.getElementById(`aiCommentArea-${ticketId}`).classList.add('hidden');
-      loadTicketFeed(ticketId); // Refresh the feed to show the new comment
+    textarea.select();
+    const successful = document.execCommand('copy');
+    if (successful) {
+      showToast("Copied via fallback! Paste in TDX.", "success");
+      highlightTdxLink(ticketId);
     } else {
-      showToast(data.message || "Failed to post to TDX", "error");
+      showToast("Please press Ctrl+C to copy.", "warning");
     }
-  } catch (e) {
-    showToast("Connection error to TDX API", "error");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalText;
+  } catch (err) {
+    showToast("Please select and copy manually.", "error");
+  }
+}
+
+function highlightTdxLink(ticketId) {
+  const tdxLink = document.querySelector(`a[href*="TicketID=${ticketId}"]`);
+  if (tdxLink) {
+    tdxLink.style.boxShadow = "0 0 15px var(--accent)";
+    setTimeout(() => tdxLink.style.boxShadow = "none", 3000);
   }
 }
 
@@ -2098,10 +2109,10 @@ async function showTicketDetail(id) {
       <div style="font-size:11px; color:var(--accent2); margin-bottom:10px; font-weight:700;">🤖 AI SUGGESTED COMMENT</div>
       <textarea id="aiDraftComment-${ticket.id}" style="width:100%; height:120px; background:rgba(0,0,0,0.2); border:1px solid var(--border); border-radius:8px; color:#fff; padding:10px; font-family:inherit; font-size:13px; resize:vertical;"></textarea>
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
-        <span style="font-size:10px; color:var(--text2); opacity:0.6;">* Signature with your name will be auto-appended</span>
+        <span style="font-size:10px; color:var(--text2); opacity:0.6;">* Don't forget to add your name to the comment in TDX</span>
         <div style="display:flex; gap:8px;">
           <button class="btn-small" style="background:transparent; border:1px solid var(--border);" onclick="this.parentElement.parentElement.parentElement.classList.add('hidden')">Cancel</button>
-          <button class="btn-small" style="background:var(--green); border:none; color:#fff;" onclick="postTdxComment('${ticket.id}')">Post to TDX Feed</button>
+          <button class="btn-small" style="background:var(--accent2); border:none; color:#fff;" onclick="copyTdxComment('${ticket.id}')">📋 Copy for Manual Posting</button>
         </div>
       </div>
     </div>
@@ -2174,7 +2185,7 @@ async function generateAIBriefing(ticket, retryCount = 0) {
   
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout for deep analysis
     
     const res = await fetch('/api/ai/generate', {
       method: 'POST',

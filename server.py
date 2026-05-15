@@ -1630,27 +1630,6 @@ def get_tdx_tickets(user=Depends(get_session_user)):
     # Fallback to Mock data if live API is offline
     return {"status": "success", "data": MOCK_TICKETS, "is_live": False}
 
-class TicketUpdatePayload(BaseModel):
-    comment: str
-    is_private: bool = False
-
-@app.post("/api/tdx/tickets/{ticket_id}/update")
-def update_tdx_ticket(ticket_id: str, payload: TicketUpdatePayload, user=Depends(get_session_user)):
-    """Adds a comment to a TDX ticket with individual worker attribution."""
-    if user["role"] not in ["sysadmin", "tech", "wag", "helpdesk"]:
-        raise HTTPException(status_code=403, detail="Forbidden: Access restricted to TRC staff.")
-    
-    # AI-Assisted Attribution Signature
-    attribution = f"\n\n— Posted by {user['username']} via TRC-AI Assistant"
-    full_comment = payload.comment + attribution
-    
-    success = tdx_conn.add_comment(ticket_id, full_comment, is_private=payload.is_private)
-    
-    if success:
-        return {"status": "success", "message": "Comment posted successfully to TDX."}
-    else:
-        raise HTTPException(status_code=500, detail="Failed to post comment to TeamDynamix API.")
-
 @app.get("/api/tdx/tickets/{ticket_id}/feed")
 def get_tdx_ticket_feed(ticket_id: str, user=Depends(get_session_user)):
     """Fetches the live activity feed for a specific ticket."""
