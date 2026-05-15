@@ -962,28 +962,31 @@ def scrape_starid(query: str):
 @app.get("/api/sccm/{device_name}")
 @app.get("/api/sccm/pc/{device_name}")
 def query_sccm(device_name: str):
+    # Support searching by name or LastLogonUser (StarID)
     ps_script = f"""
-    $url = "https://sccmpss.smsu.edu/AdminService/wmi/SMS_R_System?`$filter=Name eq '{device_name}'"
+    $url = "https://sccmpss.smsu.edu/AdminService/wmi/SMS_R_System?`$filter=Name eq '{device_name}' or LastLogonUserName eq '{device_name}'"
     try {{
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $result = Invoke-RestMethod -Uri $url -UseDefaultCredentials -ErrorAction Stop
         if ($result.value.Count -gt 0) {{
-            $device = $result.value[0]
-            $obj = @{{
-                PCName = $device.Name
-                ResourceID = $device.ItemKey
-                User = $device.LastLogonUserName
-                IPAddress = if ($device.IPAddresses) {{ $device.IPAddresses -join ', ' }} else {{ 'N/A' }}
-                Model = $device.OperatingSystemNameandVersion
-                LastSeen = if ($device.LastLogonTimestamp) {{ $device.LastLogonTimestamp }} else {{ 'Active' }}
-                Status = 'Online'
-                # New fields for premium dashboard
-                Manufacturer = if ($device.Manufacturer) {{ $device.Manufacturer }} else {{ 'N/A' }}
-                SerialNumber = if ($device.SerialNumber) {{ $device.SerialNumber }} else {{ 'N/A' }}
-                ClientVersion = if ($device.ClientVersion) {{ $device.ClientVersion }} else {{ 'N/A' }}
-                ADSite = if ($device.ADSiteName) {{ $device.ADSiteName }} else {{ 'N/A' }}
+            $out = @()
+            foreach ($device in $result.value) {{
+                $obj = @{{
+                    PCName = $device.Name
+                    ResourceID = $device.ItemKey
+                    User = $device.LastLogonUserName
+                    IPAddress = if ($device.IPAddresses) {{ $device.IPAddresses -join ', ' }} else {{ 'N/A' }}
+                    Model = $device.OperatingSystemNameandVersion
+                    LastSeen = if ($device.LastLogonTimestamp) {{ $device.LastLogonTimestamp }} else {{ 'Active' }}
+                    Status = 'Online'
+                    Manufacturer = if ($device.Manufacturer) {{ $device.Manufacturer }} else {{ 'N/A' }}
+                    SerialNumber = if ($device.SerialNumber) {{ $device.SerialNumber }} else {{ 'N/A' }}
+                    ClientVersion = if ($device.ClientVersion) {{ $device.ClientVersion }} else {{ 'N/A' }}
+                    ADSite = if ($device.ADSiteName) {{ $device.ADSiteName }} else {{ 'N/A' }}
+                }}
+                $out += $obj
             }}
-            @($obj) | ConvertTo-Json -Depth 3
+            $out | ConvertTo-Json -Depth 3
         }} else {{
             Write-Output "NOT_FOUND"
         }}

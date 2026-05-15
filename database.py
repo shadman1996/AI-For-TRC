@@ -295,9 +295,9 @@ def query_tdx_asset(query_str):
         # If no exact, try partial
         rows = conn.execute("""
             SELECT * FROM tdx_assets 
-            WHERE tag LIKE ? OR serial LIKE ? OR name LIKE ? OR attributes LIKE ?
+            WHERE tag LIKE ? OR serial LIKE ? OR name LIKE ? OR attributes LIKE ? OR owner LIKE ?
             LIMIT 10
-        """, (f"%{exact}%", f"%{exact}%", f"%{exact}%", f"%{exact}%")).fetchall()
+        """, (f"%{exact}%", f"%{exact}%", f"%{exact}%", f"%{exact}%", f"%{exact}%")).fetchall()
     else:
         # Dynamic SQL intersection for multi-word
         sql = "SELECT * FROM tdx_assets WHERE "

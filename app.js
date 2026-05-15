@@ -1033,30 +1033,64 @@ function renderDirectoryResults(users, source = 'Active Directory') {
 // ----- SCCM TAB LOGIC -----
 async function searchSCCMTab() {
   const input = document.getElementById('sccmSearchInput');
-  const query = input.value.trim();
-  if (!query) return;
+  const rawQuery = input.value.trim();
+  if (!rawQuery) return;
 
   const resultsEl = document.getElementById('sccmResults');
-  resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Scanning SCCM DB...</h3></div>';
+  
+  // 1. Clean the query
+  let cleanQuery = rawQuery.replace(/^(find|search|lookup|get|where is|his|her|device|pc|computer|machine)\s+/gi, '')
+                           .replace(/\s+(his|her|device|pc|computer|machine|find|lookup)$/gi, '').trim();
 
-  // Smart MAC address pattern recognition (colons, hyphens, periods, or plain hex)
-  const isMac = /^([0-9A-Fa-f]{2}[:-]?){5}([0-9A-Fa-f]{2})$/.test(query) || 
-                /^([0-9A-Fa-f]{4}[.]){2}([0-9A-Fa-f]{4})$/.test(query) || 
-                /^[0-9A-Fa-f]{12}$/.test(query);
+  resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Analyzing device query...</h3></div>';
 
-  const endpoint = isMac ? `/api/sccm/mac/${encodeURIComponent(query)}` : `/api/sccm/pc/${encodeURIComponent(query)}`;
+  // 2. Smart pattern recognition
+  const isMac = /^([0-9A-Fa-f]{2}[:-]?){5}([0-9A-Fa-f]{2})$/.test(cleanQuery) || 
+                /^([0-9A-Fa-f]{4}[.]){2}([0-9A-Fa-f]{4})$/.test(cleanQuery) || 
+                /^[0-9A-Fa-f]{12}$/.test(cleanQuery);
+
+  const isStarID = /^[a-z]{2}\d{4}[a-z]{2}$/i.test(cleanQuery);
+  const wordCount = cleanQuery.split(/\s+/).length;
+
+  // 3. Handle Name-to-Device resolution (if query is multi-word or doesn't look like a PC/MAC)
+  if (!isMac && !isStarID && (wordCount > 1 || !/^[A-Z0-9-]{4,}$/i.test(cleanQuery))) {
+    resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>🔍 Resolving user identity for device mapping...</h3></div>';
+    try {
+      // First, find the user's StarID from AD
+      const adRes = await fetch(`/api/ad/${encodeURIComponent(cleanQuery)}?token=${currentUser.token}`);
+      const adData = await adRes.json();
+      
+      if (adData.status === 'success' && adData.data.length > 0) {
+        const user = adData.data[0];
+        const starid = user.StarID || user.samaccountname;
+        resultsEl.innerHTML = `<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Found User: ${user.DisplayName}.<br>Searching for assigned devices...</h3></div>`;
+        
+        // Now search SCCM using the resolved StarID
+        const sccmRes = await fetch(`/api/sccm/pc/${starid}?token=${currentUser.token}`);
+        const sccmData = await sccmRes.json();
+        if (sccmData.status === 'success' && sccmData.data.length > 0) {
+          renderSCCMResults(sccmData.data);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Identity resolution failed, falling back to direct SCCM query.");
+    }
+  }
+
+  // 4. Fallback to direct SCCM/MAC/Mist query
+  const endpoint = isMac ? `/api/sccm/mac/${encodeURIComponent(cleanQuery)}` : `/api/sccm/pc/${encodeURIComponent(cleanQuery)}`;
 
   try {
     const res = await fetch(`${endpoint}?token=${currentUser.token}`);
     const data = await res.json();
-    if (data.status === 'success') {
+    if (data.status === 'success' && data.data.length > 0) {
       renderSCCMResults(data.data);
     } else {
       if (isMac) {
-        // Fallback to query Mist WiFi
         resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>🔍 MAC not in SCCM. Scanning Juniper Mist WiFi...</h3></div>';
         try {
-          const mistRes = await fetch(`/api/mist/${encodeURIComponent(query)}`);
+          const mistRes = await fetch(`/api/mist/${encodeURIComponent(cleanQuery)}`);
           const mistData = await mistRes.json();
           if (mistData.status === 'success') {
             const client = mistData.data;
