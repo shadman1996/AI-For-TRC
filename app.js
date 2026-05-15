@@ -2956,16 +2956,45 @@ function copyPath(path, btn) {
 }
 
 function copyToClipboard(text, btn) {
-  navigator.clipboard.writeText(text).then(() => {
-    const originalText = btn.innerText;
+  const originalText = btn.innerText;
+  
+  const onSuccess = () => {
     btn.innerText = "✅ Copied!";
     btn.classList.add('success');
-    showToast("Link copied to clipboard", "success");
+    showToast("Copied to clipboard", "success");
     setTimeout(() => {
       btn.innerText = originalText;
       btn.classList.remove('success');
     }, 2000);
-  });
+  };
+
+  // 1. Try modern clipboard API
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(onSuccess).catch(() => fallbackCopyText(text, onSuccess));
+  } else {
+    // 2. Use legacy fallback
+    fallbackCopyText(text, onSuccess);
+  }
+}
+
+function fallbackCopyText(text, callback) {
+  try {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    // Ensure it's not visible
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    if (successful && callback) callback();
+    else showToast("Please select and copy manually", "warning");
+  } catch (err) {
+    showToast("Failed to copy", "error");
+  }
 }
 
 async function fetchDeploymentInfo() {
