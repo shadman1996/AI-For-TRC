@@ -11,7 +11,7 @@
 
 ## 2. TeamDynamix (TDX) Integration
 - **Live Sync**: Active connection to `services.smsu.edu` via `loginadmin` protocol.
-- **Optimized View**: Real-time filtering for **New** and **In Process** tickets only.
+- **Optimized View**: Active-only ticket synchronizations with interactive, glassmorphic filtering across `New`, `Open`, `In Process`, `On Hold`, and `Waiting for Customer Response` states.
 - **AI Co-Pilot**: Context-aware suggestion engine implemented. AI analyzes the **full activity feed** (comments/history) to draft responses and technical next steps.
 - **Worker Attribution**: Automated signature system ensures all comments are attributed to the active staff member (`— Posted by [User] via TRC-AI`).
 

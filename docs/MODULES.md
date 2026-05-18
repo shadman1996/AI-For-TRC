@@ -16,8 +16,8 @@ The TRC AI Assistant is built as a modular platform. Each module handles a speci
 ## 2. 🎫 TDX Ticket Module (Live)
 - **Purpose**: Live ticket queue management and AI-assisted commenting.
 - **Integration**: TeamDynamix REST API at `https://services.smsu.edu/TDWebApi/api`
-- **Auth**: `BEID` + `WebServicesKey` via `/api/auth/loginadmin`. Bearer token cached in memory (1-hour expiry, auto-refresh).
-- **Ticket Filter**: Shows only **New (Status 1)** and **In Process (Status 2)** tickets — no resolved ticket clutter.
+- **Auth**: Ephemeral dynamic session handshake mapping Active Directory session passwords in-memory under random tokens to request technician-level Bearer tokens from `services.smsu.edu/TDWebApi/api` on-demand (fallback to standard institutional token cached in memory).
+- **Ticket Filter**: Automatically retrieves active status classes (`New`, `In Process`, `On Hold`, `Requested`), bypassing completed, closed, or cancelled statuses. Provides an interactive glassmorphic status filter bar to dynamically view `New`, `Open`, `In Process`, `On Hold`, and `Waiting for Customer Response` states.
 - **AI Co-Pilot**:
   - Fetches the last 10 feed entries (comments + status history) per ticket.
   - AI determines current state, what's been tried, and who/what is the next step.

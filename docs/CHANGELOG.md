@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [3.6.0] - 2026-05-14 (Current)
+## [4.0.0] - 2026-05-18 (Current)
+### Added
+- **Secure Ephemeral Dynamic Ticket Session Auth**: Implemented a secure dynamic credential mapping system that links a logged-in technician's Active Directory (AD) password securely in-memory under their random session token (no local plain-text file storage). The backend dynamically requests a user-level token from TeamDynamix `services.smsu.edu` to query and sync tickets strictly on their behalf.
+- **Intelligent Status Class Filtering**: Hardened `/api/tdx/tickets` to perform ticket search requests specifying active status class IDs (`New`, `In Process`, `On Hold`, and `Requested`). Completed/closed classes (`Resolved`, `Closed`, `Cancelled`) are bypassed at the API layer.
+- **Premium Glassmorphic Status Filter Bar**: Added an elegant, click-to-toggle horizontal glassmorphic filter row containing custom indicator lights and micro-animations for filtering across `New`, `Open`, `In Process`, `On Hold`, and `Waiting for Customer Response` states.
+- **Vibrant Status Indicator Badging**: Aligned all ticketing list card badges and ticket details elements to dynamically style themselves with status-matching backgrounds and border colors.
+- **Robust Client-Side Cache**: Transitioned the frontend ticketing engine to maintain an `allCachedTickets` array, performing ultra-fast local filter evaluations on filter pill clicks without incurring additional network latency or round-trips.
+
+### Changed
+- **Mock Fallback Data Alignment**: Updated `MOCK_TICKETS` statuses in `server.py` to reflect actual active categories (`New`, `Open`, `In Process`, `On Hold`, `Waiting for Customer Response`) to prevent them from being hidden by active-only ticketing rules.
+
+## [3.6.0] - 2026-05-14
 ### Added
 - **Premium Interactive Step-by-Step Wayfinding Assistant**: Fully redesigned the Campus Wayfinding dashboard module. Users can map customizable multi-elevation navigation routes (e.g., BA 200 to ST 269) with step-by-step instructions. The assistant dynamically maps each physical traversal stage to the correct campus floor plan PDF, automatically switching interactive map views as users follow along.
 - **Wayfinding Clean Layout Redesign**: Reorganized the Wayfinding sidebar controls into an elegant Mode Switcher tab system (AI Route Planner vs Browse PDFs) to remove visual clutter and cognitive load. The map display features floating translucent indicators and interactive phase controllers.

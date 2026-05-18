@@ -64,7 +64,7 @@ The AI Co-Pilot reads **live ticket feeds** (comments + status changes) to:
 
 All TDX comments posted via the AI are signed: `— Posted by [username] via TRC-AI Assistant`
 
-**Filter**: Only **New** and **In Process** tickets are shown — no closed-ticket noise.
+**Filter**: Dynamically queries all active institutional tickets (StatusClassIDs `New`, `In Process`, `On Hold`, `Requested`), automatically bypassing resolved, closed, and cancelled statuses. Provides an interactive glassmorphic status filter row to toggle views for `New`, `Open`, `In Process`, `On Hold`, and `Waiting for Customer Response` states.
 
 ---
 
