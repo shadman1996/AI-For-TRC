@@ -53,7 +53,7 @@ class SecurityManager:
             config = json.load(f)
 
         modified = False
-        sensitive_keys = ["password", "api_key", "token"]
+        sensitive_keys = ["password", "api_key", "token", "wskey", "beid", "secret"]
         
         def recursive_secure(obj):
             nonlocal modified

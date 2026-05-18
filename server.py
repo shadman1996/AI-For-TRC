@@ -116,7 +116,7 @@ class AIAdapter:
                     "prompt": prompt,
                     "stream": False,
                     "options": {"temperature": 0.3}
-                }, timeout=(5, 45))
+                }, timeout=(5, 90))
                 return res.json().get("response", "No response from AI")
             except requests.exceptions.ConnectionError:
                 return "AI connection dropped. Try again or ask about a specific issue."
@@ -267,7 +267,9 @@ async def security_middleware(request: Request, call_next):
         return JSONResponse(status_code=500, content={"detail": "Internal Security Error"})
 
 # In-memory session store (token -> {username, role})
+# In-memory session store (token -> {username, role})
 SESSIONS = {}
+ACTIVE_PASSWORDS = {}
 
 class LoginPayload(BaseModel):
     username: str
@@ -287,7 +289,8 @@ def login(payload: LoginPayload):
         role = user_data["role"]
         modules = user_data["modules"]
         token = str(uuid.uuid4())
-        SESSIONS[token] = {"username": u, "role": role, "modules": modules}
+        SESSIONS[token] = {"token": token, "username": u, "role": role, "modules": modules}
+        ACTIVE_PASSWORDS[token] = p
         return {"status": "success", "token": token, "role": role, "username": u, "modules": modules}
 
     # 2. Hardcoded test accounts removed for production security.
@@ -297,7 +300,8 @@ def login(payload: LoginPayload):
         role = test_accounts[u]
         modules = CONFIG.get("default_module_permissions", {}).get(role, [])
         token = str(uuid.uuid4())
-        SESSIONS[token] = {"username": u, "role": role, "modules": modules}
+        SESSIONS[token] = {"token": token, "username": u, "role": role, "modules": modules}
+        ACTIVE_PASSWORDS[token] = p
         return {"status": "success", "token": token, "role": role, "username": u, "modules": modules}
 
     # AD VALIDATION FALLBACK
@@ -350,13 +354,15 @@ def login(payload: LoginPayload):
                 role = user_data["role"]
                 modules = user_data["modules"]
                 
-            SESSIONS[token] = {"username": u, "role": role, "modules": modules}
+            SESSIONS[token] = {"token": token, "username": u, "role": role, "modules": modules}
+            ACTIVE_PASSWORDS[token] = p
             return {"status": "success", "token": token, "role": role, "username": u, "modules": modules}
         elif out == "TIMEOUT" or "ERROR" in out:
             # Emergency offline login ONLY if explicitly allowed or for specific recovery StarIDs
             if p == "trc2026" and (u == "wagahsan" or u == "cx5386pp"):
                  token = str(uuid.uuid4())
-                 SESSIONS[token] = {"username": u, "role": "sysadmin", "modules": CONFIG.get("default_module_permissions", {}).get("sysadmin", [])}
+                 SESSIONS[token] = {"token": token, "username": u, "role": "sysadmin", "modules": CONFIG.get("default_module_permissions", {}).get("sysadmin", [])}
+                 ACTIVE_PASSWORDS[token] = p
                  return {"status": "success", "token": token, "role": "sysadmin", "username": u}
             return {"status": "error", "message": "Network or Active Directory is unreachable. Contact WAG for emergency access."}
         else:
@@ -1420,7 +1426,7 @@ MOCK_TICKETS = [
     {
         "id": "909303",
         "title": "EServices login Issue",
-        "status": "In Process",
+        "status": "New",
         "priority": "Medium",
         "requestor": "SMSU-Admissions",
         "created": "2026-05-14T13:10:00",
@@ -1428,13 +1434,14 @@ MOCK_TICKETS = [
         "service": "eServices / Login",
         "feed": [
             {"author": "System", "type": "status", "date": "2026-05-14T13:10:00", "text": "Ticket created via web portal."},
-            {"author": "TRC Staff", "type": "status", "date": "2026-05-14T13:15:00", "text": "Changed Status from New to In Process."}
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-14T13:15:00", "text": "Changed Status from New to In Process."},
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-18T14:30:00", "text": "Changed Status from In Process to Resolved."}
         ]
     },
     {
         "id": "913461",
         "title": "BOLI31 (10.6.130.28) is Down at least 60 min.",
-        "status": "New",
+        "status": "Open",
         "priority": "Medium",
         "requestor": "noreply-wug@smsu.edu",
         "created": "2026-05-14T12:09:00",
@@ -1447,7 +1454,7 @@ MOCK_TICKETS = [
     {
         "id": "913330",
         "title": "Access to emails",
-        "status": "New",
+        "status": "In Process",
         "priority": "Medium",
         "requestor": "Kelly Loft",
         "created": "2026-05-14T11:28:00",
@@ -1460,7 +1467,7 @@ MOCK_TICKETS = [
     {
         "id": "911073",
         "title": "Employee offboarding - Will Thomas",
-        "status": "In Process",
+        "status": "On Hold",
         "priority": "Medium",
         "requestor": "Raphael Onyeagba",
         "created": "2026-05-14T10:43:00",
@@ -1468,13 +1475,14 @@ MOCK_TICKETS = [
         "service": "Employee Offboarding",
         "feed": [
             {"author": "Raphael Onyeagba", "type": "comment", "date": "2026-05-14T10:43:00", "text": "Will Thomas is leaving the College of Business, Education and Professional Studies. Please process offboarding."},
-            {"author": "TRC Staff", "type": "status", "date": "2026-05-14T10:50:00", "text": "Changed Status from New to In Process."}
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-14T10:50:00", "text": "Changed Status from New to In Process."},
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-18T14:32:00", "text": "Changed Status from In Process to Resolved."}
         ]
     },
     {
         "id": "859502",
         "title": "Computer replacement - Shelby Flint",
-        "status": "In Process",
+        "status": "Waiting for Customer Response",
         "priority": "Medium",
         "requestor": "Shelby Flint",
         "created": "2026-04-08T13:46:00",
@@ -1491,13 +1499,14 @@ MOCK_TICKETS = [
             {"author": "Stephen Schutte", "type": "comment", "date": "2026-05-13T12:08:00", "text": "Task completed: Removed GY4F4J4 from AD and SCCM. Percent Complete: 100%."},
             {"author": "Tamima Rashid", "type": "comment", "date": "2026-05-14T09:28:00", "text": "Laptop is being set up. Running the master script now."},
             {"author": "Tamima Rashid", "type": "comment", "date": "2026-05-14T09:49:00", "text": "We have prepared the device for you. You can stop by TRC anytime to pick it up."},
-            {"author": "Franck Ohachosim", "type": "status", "date": "2026-05-14T10:32:00", "text": "Changed Status from In Process to Waiting for Customer Response. Hold expires Mon 5/18/26."}
+            {"author": "Franck Ohachosim", "type": "status", "date": "2026-05-14T10:32:00", "text": "Changed Status from In Process to Waiting for Customer Response. Hold expires Mon 5/18/26."},
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-18T14:35:00", "text": "Changed Status from Waiting for Customer Response to Resolved."}
         ]
     },
     {
         "id": "912978",
         "title": "Candidate Laptop Preparation",
-        "status": "In Process",
+        "status": "Resolved",
         "priority": "Medium",
         "requestor": "Bailey Johnson",
         "created": "2026-05-14T10:12:00",
@@ -1519,13 +1528,14 @@ MOCK_TICKETS = [
         "service": "Computer Cycle / Hardware",
         "feed": [
             {"author": "TRC Staff", "type": "status", "date": "2026-05-14T09:35:00", "text": "Changed Status from New to In Process."},
-            {"author": "Tamima Rashid", "type": "comment", "date": "2026-05-14T09:40:00", "text": "Imaging device via SCCM. Will install standard software suite plus any Facilities-specific tools."}
+            {"author": "Tamima Rashid", "type": "comment", "date": "2026-05-14T09:40:00", "text": "Imaging device via SCCM. Will install standard software suite plus any Facilities-specific tools."},
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-18T14:40:00", "text": "Changed Status from In Process to Resolved."}
         ]
     },
     {
         "id": "880741",
         "title": "laptop returned?",
-        "status": "In Process",
+        "status": "New",
         "priority": "Medium",
         "requestor": "Kelly Loft",
         "created": "2026-05-14T00:02:00",
@@ -1533,13 +1543,14 @@ MOCK_TICKETS = [
         "service": "Inventory / Asset Tracking",
         "feed": [
             {"author": "Kelly Loft", "type": "comment", "date": "2026-05-14T00:02:00", "text": "Has the Athletics laptop been returned yet? We need to update our records."},
-            {"author": "TRC Staff", "type": "status", "date": "2026-05-14T08:30:00", "text": "Changed Status from New to In Process. Checking TRC inventory."}
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-14T08:30:00", "text": "Changed Status from New to In Process. Checking TRC inventory."},
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-18T14:42:00", "text": "Changed Status from In Process to Resolved."}
         ]
     },
     {
         "id": "899786",
         "title": "Library Machine without deep freeze",
-        "status": "In Process",
+        "status": "Open",
         "priority": "Medium",
         "requestor": "Brady Cronen",
         "created": "2026-05-13T14:15:00",
@@ -1547,13 +1558,14 @@ MOCK_TICKETS = [
         "service": "Software Installation",
         "feed": [
             {"author": "Brady Cronen", "type": "comment", "date": "2026-05-13T14:15:00", "text": "Found a library machine without Deep Freeze installed. It's accumulating user data and changes between sessions."},
-            {"author": "TRC Staff", "type": "status", "date": "2026-05-13T14:20:00", "text": "Changed Status from New to In Process."}
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-13T14:20:00", "text": "Changed Status from New to In Process."},
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-18T14:45:00", "text": "Changed Status from In Process to Resolved."}
         ]
     },
     {
         "id": "757375",
         "title": "iPad audit",
-        "status": "In Process",
+        "status": "On Hold",
         "priority": "Medium",
         "requestor": "Soren Rothstein",
         "created": "2026-05-13T14:00:00",
@@ -1561,7 +1573,8 @@ MOCK_TICKETS = [
         "service": "Inventory / Audit",
         "feed": [
             {"author": "Soren Rothstein", "type": "comment", "date": "2026-05-13T14:00:00", "text": "Starting iPad audit for ITS. Cross-referencing Jamf inventory with physical device locations."},
-            {"author": "TRC Staff", "type": "status", "date": "2026-05-13T14:05:00", "text": "Changed Status from New to In Process."}
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-13T14:05:00", "text": "Changed Status from New to In Process."},
+            {"author": "TRC Staff", "type": "status", "date": "2026-05-18T14:48:00", "text": "Changed Status from In Process to Resolved."}
         ]
     },
     {
@@ -1595,7 +1608,7 @@ MOCK_TICKETS = [
     {
         "id": "875152",
         "title": "Re: help resetting star id?",
-        "status": "In Process",
+        "status": "Waiting for Customer Response",
         "priority": "Medium",
         "requestor": "Michelle G. Beach",
         "created": "2026-04-29T08:44:00",
@@ -1623,29 +1636,135 @@ def save_system_config(payload: dict, user=Depends(get_session_user)):
         json.dump(payload, f, indent=4)
     return {"status": "success"}
 
-@app.get("/api/tdx/tickets")
-def get_tdx_tickets(user=Depends(get_session_user)):
-    """Fetches tickets from live TDX API if configured, otherwise falls back to local cache/mock."""
-    live_data = tdx_conn.get_tickets()
-    if live_data:
-        # Standardize live data to match UI expectations
-        formatted = []
-        for t in live_data:
-            formatted.append({
-                "id": str(t.get("ID")),
-                "title": t.get("Title"),
-                "status": t.get("StatusName"),
-                "priority": t.get("PriorityName"),
-                "requestor": t.get("RequestorName"),
-                "created": t.get("CreatedDate"),
-                "description": t.get("Description", ""),
-                "service": t.get("TypeName", "General Support"),
-                "source": "LIVE"
-            })
-        return {"status": "success", "data": formatted, "is_live": True}
+@app.post("/api/admin/update-tdx-credentials")
+def update_tdx_credentials(payload: dict, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "wag", "tech"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
     
-    # Fallback to Mock data if live API is offline
-    return {"status": "success", "data": MOCK_TICKETS, "is_live": False}
+    beid = payload.get("beid")
+    wskey = payload.get("wskey")
+    appid = payload.get("appid", "181")
+    
+    if not beid or not wskey:
+        raise HTTPException(status_code=400, detail="BEID and WebServicesKey are required.")
+    
+    # Encrypt keys automatically if not already encrypted
+    sm = SecurityManager()
+    if not beid.startswith("ENC("):
+        beid = sm.encrypt(beid)
+    if not wskey.startswith("ENC("):
+        wskey = sm.encrypt(wskey)
+        
+    config_path = "config.json"
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            config = json.load(f)
+    else:
+        config = {}
+        
+    if "tdx" not in config:
+        config["tdx"] = {}
+        
+    config["tdx"]["beid"] = beid
+    config["tdx"]["wskey"] = wskey
+    config["tdx"]["appid"] = appid
+    
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=4)
+        
+    # Re-initialize connector
+    global tdx_conn
+    from tdx_api import TDXConnector
+    tdx_conn = TDXConnector(config_path)
+    
+    return {"status": "success", "message": "Credentials updated and encrypted successfully!"}
+
+@app.get("/api/tdx/tickets")
+def get_tdx_tickets(manual_token: str = None, user=Depends(get_session_user)):
+    """Fetches tickets from live TDX API if configured, otherwise falls back to local cache/mock."""
+    tdx_token = None
+    username_used = None
+    
+    # 1. Try manual token first if provided
+    if manual_token:
+        tdx_token = manual_token
+        username_used = "Manual Token"
+    
+    # 2. Try the logged-in technician's Active Directory session password
+    if not tdx_token and user and "token" in user:
+        session_token = user["token"]
+        pwd = ACTIVE_PASSWORDS.get(session_token)
+        if pwd:
+            try:
+                import requests
+                auth_url = f"{tdx_conn.base_url}/auth"
+                payload = {
+                    "username": user["username"],
+                    "password": pwd
+                }
+                logging.info(f"Attempting live TDX authentication for technician StarID '{user['username']}'...")
+                res = requests.post(auth_url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+                if res.status_code == 200:
+                    tdx_token = res.text.strip('"')
+                    username_used = user["username"]
+                    logging.info(f"Successfully authenticated technician '{user['username']}' to live TDX API!")
+            except Exception as e:
+                logging.error(f"Failed to authenticate StarID '{user['username']}' to TDX: {e}")
+                
+    # 3. Fallback to standard app token
+    if not tdx_token:
+        tdx_token = tdx_conn.get_token()
+        username_used = tdx_conn.username
+
+    # 4. If we have a token, query the live TDX ticketing API
+    if tdx_token:
+        url = f"{tdx_conn.base_url}/{tdx_conn.appid}/tickets/search"
+        headers = {
+            "Authorization": f"Bearer {tdx_token}",
+            "Content-Type": "application/json"
+        }
+        # Filter strictly for active status classes: New (1), In Process (2), On Hold (5), Requested (6)
+        # This automatically filters out Completed (3) and Cancelled (4) classes!
+        payload = {
+            "StatusClassIDs": [1, 2, 5, 6],
+            "MaxResults": 75
+        }
+        try:
+            import requests
+            res = requests.post(url, json=payload, headers=headers, timeout=15)
+            if res.status_code == 200:
+                live_data = res.json()
+                formatted = []
+                for t in live_data:
+                    status_name = t.get("StatusName")
+                    if status_name in ["Resolved", "Closed", "Cancelled"]:
+                        continue
+                    formatted.append({
+                        "id": str(t.get("ID")),
+                        "title": t.get("Title"),
+                        "status": status_name,
+                        "priority": t.get("PriorityName"),
+                        "requestor": t.get("RequestorName"),
+                        "created": t.get("CreatedDate"),
+                        "description": t.get("Description", ""),
+                        "service": t.get("TypeName", "General Support"),
+                        "source": "LIVE"
+                    })
+                logging.info(f"Successfully pulled {len(formatted)} live active tickets using credentials of '{username_used}'!")
+                return {"status": "success", "data": formatted, "is_live": True, "auth_user": username_used}
+            else:
+                logging.error(f"Live TDX Search failed for '{username_used}' with status {res.status_code}: {res.text}")
+        except Exception as e:
+            logging.error(f"Live TDX Search Exception for '{username_used}': {e}")
+            
+    # Fallback to Mock data if live API is offline or unauthorized
+    # Add source attribute to mock data
+    for t in MOCK_TICKETS:
+        t["source"] = "CACHED"
+    
+    # Filter to only active tickets to avoid resolved tickets showing up
+    active_mock = [t for t in MOCK_TICKETS if t.get("status") not in ["Resolved", "Closed", "Cancelled"]]
+    return {"status": "success", "data": active_mock, "is_live": False}
 
 @app.get("/api/tdx/tickets/{ticket_id}/feed")
 def get_tdx_ticket_feed(ticket_id: str, user=Depends(get_session_user)):
@@ -1692,13 +1811,17 @@ def suggest_tdx_comment(ticket_id: str, user=Depends(get_session_user)):
                 feed_context += f"- {author}: {body}\n"
 
     # 3. Build Intelligent Prompt
+    t_title = ticket.get("Title") or ticket.get("title", "No Title")
+    t_desc = ticket.get("Description") or ticket.get("description", "No Description")
+    t_status = ticket.get("StatusName") or ticket.get("status", "Unknown")
+
     prompt = f"""
     You are an AI Assistant for the SMSU Technology Resource Center (TRC).
     Analyze the following TeamDynamix ticket and its history to suggest the NEXT professional step.
     
-    TICKET: {ticket.get('Title')}
-    DESCRIPTION: {ticket.get('Description')}
-    CURRENT STATUS: {ticket.get('StatusName')}
+    TICKET: {t_title}
+    DESCRIPTION: {t_desc}
+    CURRENT STATUS: {t_status}
     {feed_context}
     
     GOAL:
@@ -2424,7 +2547,7 @@ def ai_proxy_stream(data: dict):
                         "num_predict": 256,
                         "num_ctx": 2048
                     }
-                }, stream=True, timeout=(3, 30))
+                }, stream=True, timeout=(5, 90))
                 
                 found_any = False
                 for line in res.iter_lines():

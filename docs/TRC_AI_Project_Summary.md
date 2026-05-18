@@ -56,9 +56,10 @@ A unified, locally-run web application combining all campus systems into one int
 ### 1. Intelligent Chat Assistant
 Staff describe an issue in plain language. The AI classifies the ticket, provides step-by-step resolution guidance, specifies TDX form fields (Classification, Service, Responsible Group, Urgency), and indicates escalation paths. The "Ask AI About This" button passes the full ticket context directly to the AI for a comprehensive action plan.
 
-### 2. Live TDX Ticket Co-Pilot ✅ (Phase 4 Complete)
-- **Live API Sync**: Directly connected to `https://services.smsu.edu/TDWebApi/api` via the institutional `loginadmin` auth protocol.
-- **Focused Queue**: Displays only **New** and **In Process** tickets — no resolved ticket noise.
+### 2. Live TDX Ticket Co-Pilot & Dynamic Filtering ✅ (Phase 4 Complete)
+- **Live Dynamic Session Auth**: Authenticates on-demand using the logged-in technician's Active Directory (AD) session credentials cached securely in-memory (zero plaintext storage on disk, self-clearing on session expiration).
+- **Intelligent Ticketing Sync**: Automatically fetches all active institutional tickets (StatusClassIDs `New`, `In Process`, `On Hold`, and `Requested`), completely bypassing completed, closed, resolved, or cancelled tickets at the API level.
+- **Dynamic Glassmorphism Status Filter Bar**: Premium horizontal glassmorphic filter bar allowing real-time, click-to-toggle filtering across `New`, `Open`, `In Process`, `On Hold`, and `Waiting for Customer Response` statuses with custom color-coded indicators.
 - **Feed-Aware AI**: Before suggesting a fix, the AI reads the **last 10 comments and status changes** to understand what's already been tried and determine the next step.
 - **One-Click Commenting**: AI drafts professional responses. Staff review and post with one click.
 - **Worker Attribution**: Every comment is signed `— Posted by [username] via TRC-AI Assistant` for full TDX audit traceability.

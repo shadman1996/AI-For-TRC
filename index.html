@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>TRC AI Help Desk Assistant — SMSU</title>
-<link rel="stylesheet" href="style.css?v=2.1">
+<link rel="stylesheet" href="style.css?v=3.0">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
@@ -303,12 +303,44 @@
       <div class="view-header">
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
           <div>
-            <h1>My Active Tickets</h1>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h1>My Active Tickets</h1>
+              <div id="ticketsLiveBadge" class="sync-badge sync-mock" onclick="showSyncDiagnostic()">
+                <span class="sync-dot"></span>
+                <span class="sync-text">Local Mock</span>
+              </div>
+            </div>
             <p>Manage your assigned work and get AI-powered briefings.</p>
           </div>
-          <button class="btn-handoff" onclick="generateHandoffReport()">📑 Shift Handoff Report</button>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <button class="btn-refresh" onclick="loadTickets()"><span class="refresh-icon">🔄</span> Refresh Tickets</button>
+            <button class="btn-handoff" onclick="generateHandoffReport()"><span class="handoff-icon">📑</span> Shift Handoff Report</button>
+          </div>
         </div>
       </div>
+      
+      <!-- Dynamic Tickets Status Filter Row -->
+      <div class="tickets-filter-bar">
+        <span class="filter-label">Filter Status:</span>
+        <div class="filter-pills">
+          <button class="filter-pill active" data-status="New" onclick="toggleStatusFilter('New', this)">
+            <span class="filter-dot" style="background:#38bdf8;"></span>New
+          </button>
+          <button class="filter-pill active" data-status="Open" onclick="toggleStatusFilter('Open', this)">
+            <span class="filter-dot" style="background:#c084fc;"></span>Open
+          </button>
+          <button class="filter-pill active" data-status="In Process" onclick="toggleStatusFilter('In Process', this)">
+            <span class="filter-dot" style="background:#4ade80;"></span>In Process
+          </button>
+          <button class="filter-pill active" data-status="On Hold" onclick="toggleStatusFilter('On Hold', this)">
+            <span class="filter-dot" style="background:#fde047;"></span>On Hold
+          </button>
+          <button class="filter-pill active" data-status="Waiting for Customer Response" onclick="toggleStatusFilter('Waiting for Customer Response', this)">
+            <span class="filter-dot" style="background:#fdba74;"></span>Waiting for Customer
+          </button>
+        </div>
+      </div>
+
       <div class="tickets-container">
         <div class="tickets-list" id="ticketsList">
           <!-- Populated by JS -->
@@ -657,9 +689,9 @@
           <h3>Select Theme</h3>
           <p style="margin-bottom: 15px; font-size: 13px; color: var(--text2);">Choose from a library of stunning, carefully-curated color schemes.</p>
           <div class="theme-grid" style="grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));">
-            <div class="theme-option active" onclick="setTheme('default')" style="background: #0f1225;">
-              <div class="theme-preview" style="background: linear-gradient(135deg, #6366f1, #a855f7);"></div>
-              <span>Default Blue</span>
+            <div class="theme-option active" onclick="setTheme('default')" style="background: #0f172a;">
+              <div class="theme-preview" style="background: linear-gradient(135deg, #10b981, #34d399);"></div>
+              <span>Mustang Green</span>
             </div>
             <div class="theme-option" onclick="setTheme('midnight')" style="background: #000000;">
               <div class="theme-preview" style="background: linear-gradient(135deg, #1e293b, #0f172a);"></div>
@@ -834,6 +866,6 @@
 </div>
 
 <script src="data.js?v=3.6.0"></script>
-<script src="app.js?v=3.6.0"></script>
+<script src="app.js?v=3.8.0"></script>
 </body>
 </html>

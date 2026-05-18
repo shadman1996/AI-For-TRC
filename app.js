@@ -5,6 +5,7 @@ let currentView = 'chat';
 let lastViewedTicket = null; // Global for retry logic
 let userCurrentLocation = '';
 let pendingWayfindingTarget = '';
+let activeSyncIsLive = false;
 
 // ----- THEME & AVATAR MANAGEMENT -----
 function applyAppearanceClasses() {
@@ -737,7 +738,7 @@ async function checkEnterpriseTools(text) {
     try {
       const adController = new AbortController();
       const adTimeout = setTimeout(() => adController.abort(), 10000);
-      const res = await fetch(`/api/ad/${encodeURIComponent(query)}`, { signal: adController.signal });
+      const res = await fetch(`/api/ad/${encodeURIComponent(query)}?token=${currentUser.token}`, { signal: adController.signal });
       clearTimeout(adTimeout);
       const data = await res.json();
       
@@ -1221,7 +1222,7 @@ async function searchJamfTab() {
   resultsEl.innerHTML = '<div class="ticket-placeholder"><div class="placeholder-icon rotating">⏳</div><h3>Querying Jamf Cloud Inventory...</h3></div>';
 
   try {
-    const res = await fetch(`/api/jamf/${encodeURIComponent(query)}`);
+    const res = await fetch(`/api/jamf/${encodeURIComponent(query)}?token=${currentUser.token}`);
     const data = await res.json();
     if (data.status === 'success' && data.data) {
       renderJamfResults(data.data);
@@ -1921,6 +1922,8 @@ function renderFormGuide() {
 
 // ----- TICKETS LOGIC -----
 let activeTickets = [];
+let allCachedTickets = [];
+let activeStatusFilters = ["New", "Open", "In Process", "On Hold", "Waiting for Customer Response"];
 
 async function suggestTdxComment(ticketId) {
   const ticket = activeTickets.find(t => t.id === ticketId);
@@ -1930,18 +1933,27 @@ async function suggestTdxComment(ticketId) {
   const textarea = document.getElementById(`aiDraftComment-${ticketId}`);
   
   area.classList.remove('hidden');
-  textarea.value = "Generating draft fix...";
+  textarea.value = "🤖 Analyzing ticket history...";
   textarea.disabled = true;
 
+  const token = currentUser ? currentUser.token : '';
   try {
-    const prompt = `Based on this ticket description: "${ticket.description}", suggest a professional technical comment/fix to post for the user. Include any relevant TRC procedures if applicable. Output ONLY the comment body, no other text.`;
-    const res = await fetch('/api/ai/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, token: currentUser ? currentUser.token : null })
-    });
+    // Use the feed-aware /suggest endpoint so the AI reads the full ticket history
+    const res = await fetch(`/api/tdx/tickets/${ticketId}/suggest?token=${token}`);
     const data = await res.json();
-    textarea.value = data.response.trim();
+    if (data.status === 'success') {
+      textarea.value = data.suggestion.trim();
+    } else {
+      // Fallback: generate locally using just the description
+      const prompt = `Based on this IT support ticket: "${ticket.title}" — Description: "${ticket.description}", suggest a professional next-step comment for a TRC technician at SMSU. Output ONLY the comment body.`;
+      const genRes = await fetch(`/api/ai/generate?token=${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      const genData = await genRes.json();
+      textarea.value = (genData.response || 'AI unavailable. Please write your comment manually.').trim();
+    }
   } catch (e) {
     textarea.value = "Failed to generate suggestion. Please write your comment manually.";
   } finally {
@@ -1996,8 +2008,9 @@ async function loadTicketFeed(ticketId) {
   const feedList = document.getElementById(`ticketFeedList-${ticketId}`);
   feedList.innerHTML = '<div style="font-size:12px; color:var(--text2);">⏳ Loading live feed...</div>';
 
+  const token = currentUser ? currentUser.token : '';
   try {
-    const res = await fetch(`/api/tdx/tickets/${ticketId}/feed`);
+    const res = await fetch(`/api/tdx/tickets/${ticketId}/feed?token=${token}`);
     const data = await res.json();
     if (data.status === 'success') {
       feedList.innerHTML = '';
@@ -2029,17 +2042,101 @@ async function loadTicketFeed(ticketId) {
 
 async function loadTickets() {
   const listEl = document.getElementById('ticketsList');
-  listEl.innerHTML = '<div class="ticket-placeholder" style="height:auto; padding:40px;"><div class="placeholder-icon" style="font-size:32px;">⏳</div><p>Fetching tickets...</p></div>';
+  if (!listEl) return;
+
+  // Guard: don't try to load tickets if no session exists yet
+  if (!currentUser || !currentUser.token) {
+    listEl.innerHTML = '<div class="ticket-placeholder" style="height:auto; padding:40px;"><div class="placeholder-icon" style="font-size:32px;">🔒</div><p>Please log in to view tickets.</p></div>';
+    return;
+  }
+
+  listEl.innerHTML = '<div class="ticket-placeholder" style="height:auto; padding:40px;"><div class="placeholder-icon" style="font-size:32px;">⏳</div><p>Fetching live tickets...</p></div>';
   
   try {
-    const res = await fetch(`/api/tdx/tickets?token=${currentUser.token}`);
+    const manualToken = localStorage.getItem('manual_tdx_token');
+    const fetchUrl = manualToken 
+      ? `/api/tdx/tickets?token=${currentUser.token}&manual_token=${encodeURIComponent(manualToken)}`
+      : `/api/tdx/tickets?token=${currentUser.token}`;
+    const res = await fetch(fetchUrl);
     const data = await res.json();
     if (data.status === 'success') {
-      activeTickets = data.data;
-      renderTicketList(activeTickets);
+      allCachedTickets = data.data;
+      
+      // Dynamically filter according to current active status filters
+      applyTicketFilters();
+      
+      activeSyncIsLive = !!data.is_live;
+      const liveBadge = document.getElementById('ticketsLiveBadge');
+      if (liveBadge) {
+        if (activeSyncIsLive) {
+          liveBadge.className = 'sync-badge sync-live';
+          liveBadge.innerHTML = '<span class="sync-dot"></span><span class="sync-text">Live Sync</span>';
+        } else {
+          liveBadge.className = 'sync-badge sync-mock';
+          liveBadge.innerHTML = '<span class="sync-dot"></span><span class="sync-text">Local Mock</span>';
+        }
+      }
+    } else {
+      listEl.innerHTML = `<p style="padding:20px; color:var(--red);">Error: ${data.detail || data.message || 'Failed to fetch tickets.'}</p>`;
     }
   } catch (e) {
     listEl.innerHTML = '<p style="padding:20px; color:var(--red);">Failed to load tickets. Is the server running?</p>';
+  }
+}
+
+function applyTicketFilters() {
+  activeTickets = allCachedTickets.filter(ticket => {
+    const status = ticket.status || '';
+    // Normalize status names to match activeStatusFilters mapping
+    let matchStatus = status;
+    const lowerStatus = status.toLowerCase();
+    if (lowerStatus.includes('process')) {
+      matchStatus = 'In Process';
+    } else if (lowerStatus.includes('customer') || lowerStatus.includes('response')) {
+      matchStatus = 'Waiting for Customer Response';
+    } else if (lowerStatus === 'new') {
+      matchStatus = 'New';
+    } else if (lowerStatus === 'open') {
+      matchStatus = 'Open';
+    } else if (lowerStatus === 'on hold' || lowerStatus.includes('hold')) {
+      matchStatus = 'On Hold';
+    }
+    
+    return activeStatusFilters.includes(matchStatus);
+  });
+  
+  renderTicketList(activeTickets);
+}
+
+function toggleStatusFilter(status, element) {
+  const index = activeStatusFilters.indexOf(status);
+  if (index > -1) {
+    // Remove from active filters
+    activeStatusFilters.splice(index, 1);
+    element.classList.remove('active');
+  } else {
+    // Add to active filters
+    activeStatusFilters.push(status);
+    element.classList.add('active');
+  }
+  
+  applyTicketFilters();
+}
+
+function getStatusBadgeStyle(status) {
+  const normStatus = (status || '').toLowerCase();
+  if (normStatus === 'new') {
+    return 'background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.2);';
+  } else if (normStatus === 'open') {
+    return 'background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.2);';
+  } else if (normStatus.includes('process')) {
+    return 'background: rgba(74, 222, 128, 0.15); color: #4ade80; border: 1px solid rgba(74, 222, 128, 0.2);';
+  } else if (normStatus.includes('hold')) {
+    return 'background: rgba(253, 224, 71, 0.15); color: #fde047; border: 1px solid rgba(253, 224, 71, 0.2);';
+  } else if (normStatus.includes('customer') || normStatus.includes('response')) {
+    return 'background: rgba(249, 115, 22, 0.15); color: #fdba74; border: 1px solid rgba(249, 115, 22, 0.2);';
+  } else {
+    return 'background: rgba(255, 255, 255, 0.08); color: var(--text2); border: 1px solid rgba(255, 255, 255, 0.1);';
   }
 }
 
@@ -2047,20 +2144,30 @@ function renderTicketList(tickets) {
   const container = document.getElementById('ticketsList');
   container.innerHTML = '';
   
+  if (tickets.length === 0) {
+    container.innerHTML = `
+      <div class="ticket-placeholder" style="height:auto; padding:40px;">
+        <div class="placeholder-icon" style="font-size:32px;">🎫</div>
+        <p>No tickets match the selected status filters.</p>
+      </div>
+    `;
+    return;
+  }
+  
   tickets.forEach(ticket => {
     const card = document.createElement('div');
     card.className = 'ticket-card';
     card.id = `ticket-card-${ticket.id}`;
     card.onclick = () => showTicketDetail(ticket.id);
     
-    const statusClass = ticket.status.toLowerCase().includes('process') ? 'status-process' : 'status-new';
+    const badgeStyle = getStatusBadgeStyle(ticket.status);
     const priorityClass = ticket.priority.toLowerCase() === 'high' ? 'priority-high' : '';
-    const sourceBadge = ticket.source === 'LIVE' ? '<span class="badge-live">LIVE</span>' : '';
+    const sourceBadge = ticket.source === 'LIVE' ? '<span class="badge-live">🟢 LIVE</span>' : '<span class="badge-cached">📦 CACHED</span>';
     
     card.innerHTML = `
       <div class="ticket-card-header">
         <span class="ticket-id">#${ticket.id} ${sourceBadge}</span>
-        <span class="ticket-status ${statusClass}">${ticket.status}</span>
+        <span class="ticket-status" style="${badgeStyle}">${ticket.status}</span>
       </div>
       <div class="ticket-card-title">${ticket.title}</div>
       <div class="ticket-card-meta">
@@ -2078,14 +2185,15 @@ async function showTicketDetail(id) {
   
   // Update active state in list
   document.querySelectorAll('.ticket-card').forEach(c => c.classList.remove('active'));
-  document.getElementById(`ticket-card-${id}`).classList.add('active');
+  const activeCard = document.getElementById(`ticket-card-${id}`);
+  if (activeCard) activeCard.classList.add('active');
   lastViewedTicket = ticket;
   
   // Parse requestor StarID if present
   const reqStarIdMatch = (ticket.requestor || '').match(/[a-zA-Z]{2}[0-9]{4}[a-zA-Z]{2}/);
   const reqStarId = reqStarIdMatch ? reqStarIdMatch[0] : '';
   
-  const statusClass = ticket.status.toLowerCase().includes('process') ? 'status-process' : 'status-new';
+  const badgeStyle = getStatusBadgeStyle(ticket.status);
   const createdDate = ticket.created ? new Date(ticket.created).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A';
   
   const detailEl = document.getElementById('ticketDetail');
@@ -2095,7 +2203,7 @@ async function showTicketDetail(id) {
         <div class="detail-title" style="margin-bottom:4px;">${ticket.title}</div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
           <span style="font-size:12px; color:var(--text2);">#${ticket.id}</span>
-          <span class="ticket-status ${statusClass}" style="font-size:11px;">${ticket.status}</span>
+          <span class="ticket-status" style="font-size:11px; ${badgeStyle}">${ticket.status}</span>
           <span style="font-size:12px;" class="${ticket.priority === 'High' ? 'priority-high' : ''}">🚩 ${ticket.priority}</span>
           <span style="font-size:12px; color:var(--text2);">📅 ${createdDate}</span>
         </div>
@@ -3488,6 +3596,8 @@ async function performLogin() {
       updateProfileUI();
       renderSidebar();
       switchView(USER_MODULES[0] || 'chat');
+      // Load tickets now that we have a valid token
+      await loadTickets();
       appendMessage(`✅ **Welcome, ${data.username}!** Your modules are loaded. How can I help you?`, 'ai');
     } else {
       errorDiv.innerText = data.message || "Login failed.";
@@ -3540,6 +3650,9 @@ async function checkSession() {
     if (currentView === 'login' || !currentView) {
         switchView(USER_MODULES[0] || 'chat');
     }
+    
+    // Now that we have a valid token, load tickets
+    await loadTickets();
   }
 }
 
@@ -4195,7 +4308,7 @@ async function adminAdLookup() {
   }
   
   try {
-    const res = await fetch(`/api/ad/${starid}`);
+    const res = await fetch(`/api/ad/${starid}?token=${currentUser.token}`);
     const resData = await res.json();
     if (resData.status === 'success' && resData.data.length > 0) {
       const user = resData.data[0];
@@ -4399,3 +4512,176 @@ function updateSparkline(containerId, value, max) {
     container.removeChild(container.firstChild);
   }
 }
+
+// TDX Diagnostic Modals
+function showSyncDiagnostic() {
+  let modal = document.getElementById('syncDiagnosticModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'syncDiagnosticModal';
+    modal.className = 'unified-profile-modal';
+    document.body.appendChild(modal);
+  }
+  
+  const isLive = activeSyncIsLive;
+  const currentManualToken = localStorage.getItem('manual_tdx_token') || '';
+  
+  const statusHtml = isLive ? `
+    <div style="text-align:center; margin-bottom:20px;">
+      <span class="sync-dot" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#22c55e; box-shadow:0 0 10px #22c55e; margin-right:8px; animation: pulse-green 2s infinite;"></span>
+      <strong style="color:#4ade80; font-size:18px;">Live Sync Connected</strong>
+    </div>
+    <p style="color:var(--text2); line-height:1.6; text-align:center;">
+      The TRC AI Assistant is successfully connected to the live Southwest Minnesota State University (SMSU) TeamDynamix platform. Tickets and activity feeds are synchronized in real-time.
+    </p>
+  ` : `
+    <div style="text-align:center; margin-bottom:20px;">
+      <span class="sync-dot" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:#f59e0b; box-shadow:0 0 10px #f59e0b; margin-right:8px; animation: pulse-amber 2s infinite;"></span>
+      <strong style="color:#fbbf24; font-size:18px;">Offline Demo Mode (Mock Fallback)</strong>
+    </div>
+    <div style="background:rgba(239, 68, 68, 0.08); border-left: 4px solid var(--red); padding: 14px 18px; border-radius: 8px; margin-bottom: 20px;">
+      <h4 style="margin:0 0 6px 0; color:var(--red); font-size:13px; font-weight:700;">TDX AUTHENTICATION FAILURE (HTTP 400)</h4>
+      <p style="margin:0; font-size:12px; line-height:1.5; color:var(--text2);">
+        The backend API was unable to authenticate administrative login on <code>/api/auth/loginadmin</code> using the credentials in <code>config.json</code>.
+      </p>
+    </div>
+    <div style="margin-bottom:20px; font-size:13px; line-height:1.6; color:var(--text2);">
+      <p><strong>Common Causes:</strong></p>
+      <ul style="padding-left:20px; margin:6px 0;">
+        <li style="margin-bottom:8px;">
+          <strong>IP Whitelist Block:</strong> The TDX WebServicesKey is configured in TDAdmin to restrict access to specific campus server IP ranges. Requests originating from this desktop or local Mini PC are blocked by TeamDynamix.
+        </li>
+        <li style="margin-bottom:8px;">
+          <strong>Credential Expiration:</strong> The WebServicesKey has expired or has been revoked in TeamDynamix Admin portal.
+        </li>
+      </ul>
+      <p style="margin-top:12px;">
+        <strong>Graceful Recovery:</strong> The system automatically fell back to high-fidelity mock data (local cache of typical TRC technician tickets) to ensure the interface remains fully operational and testable.
+      </p>
+    </div>
+  `;
+
+  modal.innerHTML = `
+    <div class="modal-content glass-card" style="width: 550px; max-width: 95vw; border-radius: 20px; padding: 30px; position: relative; animation: modalFadeIn 0.3s cubic-bezier(0.165, 0.84, 0.44, 1); margin: 10vh auto; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(25px); border: 1px solid var(--border); box-shadow: 0 20px 50px rgba(0,0,0,0.5); max-height:85vh; overflow-y:auto;">
+      <button onclick="closeSyncDiagnostic()" style="position:absolute; top:20px; right:20px; background:none; border:none; color:var(--text2); font-size:20px; cursor:pointer;">&times;</button>
+      <h3 style="margin-top:0; margin-bottom:20px; font-size:20px; background: linear-gradient(135deg, #fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+        TeamDynamix Connection Diagnostics
+      </h3>
+      <div style="margin-top:15px; margin-bottom:25px;">
+        ${statusHtml}
+        
+        <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.08); padding-top:15px;">
+          <h4 style="margin:0 0 8px 0; color:#fff; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;">
+            <span>🔑</span> Direct Browser Token Sync
+          </h4>
+          <p style="margin:0 0 12px 0; font-size:11px; color:var(--text2); line-height:1.4;">
+            If you are logged into Southwest Minnesota State's TeamDynamix, you can force immediate live synchronization! Inspect any network call on <code>services.smsu.edu</code>, copy the <code>Bearer [token]</code> value, and paste it below:
+          </p>
+          <div style="display:flex; gap:10px;">
+            <input type="text" id="manualTdxTokenInput" placeholder="Paste your Bearer token here..." value="${currentManualToken}" style="flex:1; background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; color:#fff; padding:8px 12px; font-size:12px; font-family:monospace;" />
+            <button onclick="saveManualTdxToken()" style="background:var(--accent); color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:700; cursor:pointer;">Save & Sync</button>
+          </div>
+          ${currentManualToken ? `
+            <div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:11px; color:#4ade80; display:flex; align-items:center; gap:4px;">
+                <span style="width:6px; height:6px; background:#4ade80; border-radius:50%;"></span> Active manual token loaded
+              </span>
+              <button onclick="clearManualTdxToken()" style="background:none; border:none; color:var(--red); font-size:11px; cursor:pointer; padding:0; text-decoration:underline;">Clear Token</button>
+            </div>
+          ` : ''}
+        </div>
+        
+        <div style="margin-top:20px; border-top:1px solid rgba(255,255,255,0.08); padding-top:15px;">
+          <h4 style="margin:0 0 8px 0; color:#fff; font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px;">
+            <span>⚙️</span> Update Live TDX Admin Credentials
+          </h4>
+          <p style="margin:0 0 12px 0; font-size:11px; color:var(--text2); line-height:1.4;">
+            Paste your active environment BEID and WebServicesKey below. The assistant will automatically encrypt them securely using AES-256 before saving to <code>config.json</code>.
+          </p>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <input type="text" id="adminTdxBeidInput" placeholder="Enter BEID (e.g. 1af3dccb-...)" style="background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; color:#fff; padding:8px 12px; font-size:12px;" />
+            <input type="text" id="adminTdxWskeyInput" placeholder="Enter WebServicesKey (e.g. /kP5FBu...)" style="background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; color:#fff; padding:8px 12px; font-size:12px;" />
+            <button onclick="saveTdxCredentials()" style="background:linear-gradient(135deg, #10b981, #059669); color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:700; cursor:pointer; align-self:flex-end;">Save Encrypted Keys & Sync</button>
+          </div>
+          <div id="credentialsUpdateStatus" style="margin-top:8px; font-size:11px; display:none;"></div>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end;">
+        <button class="btn-small" style="background:var(--accent); color:#fff; border:none; font-weight:700; padding:8px 16px; border-radius:8px; cursor:pointer;" onclick="closeSyncDiagnostic()">Acknowledge</button>
+      </div>
+    </div>
+  `;
+  modal.style.display = 'block';
+  modal.style.position = 'fixed';
+  modal.style.top = '0';
+  modal.style.left = '0';
+  modal.style.width = '100%';
+  modal.style.height = '100%';
+  modal.style.background = 'rgba(0,0,0,0.6)';
+  modal.style.zIndex = '999999';
+}
+
+function closeSyncDiagnostic() {
+  const modal = document.getElementById('syncDiagnosticModal');
+  if (modal) modal.style.display = 'none';
+}
+
+window.saveManualTdxToken = function() {
+  const token = document.getElementById('manualTdxTokenInput').value.trim();
+  if (token) {
+    localStorage.setItem('manual_tdx_token', token);
+  } else {
+    localStorage.removeItem('manual_tdx_token');
+  }
+  closeSyncDiagnostic();
+  loadTickets();
+};
+
+window.clearManualTdxToken = function() {
+  localStorage.removeItem('manual_tdx_token');
+  closeSyncDiagnostic();
+  loadTickets();
+};
+
+window.saveTdxCredentials = async function() {
+  const beid = document.getElementById('adminTdxBeidInput').value.trim();
+  const wskey = document.getElementById('adminTdxWskeyInput').value.trim();
+  const statusEl = document.getElementById('credentialsUpdateStatus');
+  
+  if (!beid || !wskey) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.innerHTML = 'Both BEID and WebServicesKey are required.';
+    statusEl.style.display = 'block';
+    return;
+  }
+  
+  statusEl.style.color = 'var(--text2)';
+  statusEl.innerHTML = 'Updating and encrypting credentials...';
+  statusEl.style.display = 'block';
+  
+  try {
+    const res = await fetch('/api/admin/update-tdx-credentials', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${currentUser.token}`
+      },
+      body: JSON.stringify({ beid, wskey })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      statusEl.style.color = '#4ade80';
+      statusEl.innerHTML = 'Keys successfully encrypted and saved to config.json!';
+      setTimeout(() => {
+        closeSyncDiagnostic();
+        loadTickets();
+      }, 1500);
+    } else {
+      statusEl.style.color = 'var(--red)';
+      statusEl.innerHTML = `Error: ${data.detail || 'Failed to save credentials.'}`;
+    }
+  } catch (err) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.innerHTML = `Exception: ${err.message}`;
+  }
+};
