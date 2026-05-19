@@ -301,6 +301,9 @@ async function switchView(viewId) {
     await loadAuditLogs();
     await loadSysAdminGlimpse();
   }
+  if (viewId === 'analytics') {
+    await loadAnalyticsData();
+  }
 }
 
 function renderSidebar() {
@@ -309,7 +312,7 @@ function renderSidebar() {
   
   const groups = [
     { title: 'Core Interface', ids: ['chat', 'tickets', 'directory', 'wayfinding'] },
-    { title: 'Admin Systems', ids: ['sccm', 'ad', 'mist', 'ise', 'jamf'] },
+    { title: 'Admin Systems', ids: ['sccm', 'ad', 'mist', 'ise', 'jamf', 'analytics'] },
     { title: 'Information', ids: ['form', 'links', 'settings'] }
   ];
 
@@ -1277,56 +1280,6 @@ function renderJamfResults(devices) {
 }
 
 
-function renderDirectoryResults(results) {
-  const container = document.getElementById('directoryResults');
-  if (!results || results.length === 0) {
-    container.innerHTML = '<div class="ticket-placeholder"><h3>No matches found in the directory</h3></div>';
-    return;
-  }
-  
-  let html = `<div class="directory-grid">`;
-  results.forEach(person => {
-    const avatarColor = person.Source.includes('StarID') ? '#3b82f6' : '#6366f1';
-    const initials = person.FullName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-    
-    html += `
-      <div class="premium-module-card">
-        <div class="pm-header">
-          <div class="pm-avatar" style="background:${avatarColor};">${initials}</div>
-          <div class="pm-title-area">
-            <div class="pm-name">${person.FullName}</div>
-            <div class="pm-sub">${person.Title || 'Staff Member'}</div>
-          </div>
-          <div class="pm-status-pill online">ACTIVE</div>
-        </div>
-        <div class="pm-body">
-          <div class="pm-info-row">
-            <span class="pm-label">🆔 StarID</span>
-            <span class="pm-value">${person.StarID}</span>
-          </div>
-          <div class="pm-info-row">
-            <span class="pm-label">🏢 Dept</span>
-            <span class="pm-value">${person.Department || 'N/A'}</span>
-          </div>
-          <div class="pm-info-row">
-            <span class="pm-label">📍 Location</span>
-            <span class="pm-value">${person.Location} - ${person.Room}</span>
-          </div>
-          <div class="pm-info-row">
-            <span class="pm-label">📧 Email</span>
-            <span class="pm-value">${person.PrimaryEmail}</span>
-          </div>
-        </div>
-        <div class="pm-action-bar">
-          <button class="pm-btn secondary" onclick="openUnifiedProfile('${person.StarID}')">👤 View Profile</button>
-          <button class="pm-btn primary" onclick="copyToClipboard('${person.PrimaryEmail}')">📋 Copy Email</button>
-        </div>
-      </div>
-    `;
-  });
-  html += `</div>`;
-  container.innerHTML = html;
-}
 
 function renderMistResults(clients) {
   const container = document.getElementById('mistResults');
@@ -1589,6 +1542,18 @@ function getKeywordPrediction(text) {
 }
 
 let chatHistory = [];
+let currentAiController = null;
+
+function stopAiGeneration() {
+  if (currentAiController) {
+    currentAiController.abort();
+    currentAiController = null;
+  }
+  const stopBtn = document.getElementById('stopAiBtn');
+  if (stopBtn) stopBtn.classList.add('hidden');
+  const askBtn = document.getElementById('askAiBtn');
+  if (askBtn) askBtn.classList.remove('hidden');
+}
 
 async function streamAIResponse(query, typingId) {
   console.log("DEBUG: Entering streamAIResponse...");
@@ -1613,14 +1578,19 @@ async function streamAIResponse(query, typingId) {
       history: chatHistory,
       token: currentUser ? currentUser.token : null
     };
-    const controller = new AbortController();
-    const streamTimeout = setTimeout(() => controller.abort(), 60000);
+    currentAiController = new AbortController();
+    const streamTimeout = setTimeout(() => { if (currentAiController) currentAiController.abort(); }, 60000);
+
+    const stopBtn = document.getElementById('stopAiBtn');
+    const askBtn = document.getElementById('askAiBtn');
+    if (stopBtn) stopBtn.classList.remove('hidden');
+    if (askBtn) askBtn.classList.add('hidden');
 
     const response = await fetch('/api/ai/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: controller.signal
+      signal: currentAiController.signal
     });
     
     // As soon as first byte arrives, switch to normal style
@@ -1641,6 +1611,9 @@ async function streamAIResponse(query, typingId) {
       container.scrollTop = container.scrollHeight;
     }
     clearTimeout(streamTimeout);
+    currentAiController = null;
+    if (stopBtn) stopBtn.classList.add('hidden');
+    if (askBtn) askBtn.classList.remove('hidden');
     
     if (!text.trim()) {
       bubble.innerHTML = "I didn't get a response. Could you rephrase your question? For example:<br>• What specific issue are you seeing?<br>• Which device or service is affected?";
@@ -1658,16 +1631,32 @@ async function streamAIResponse(query, typingId) {
     if (chatHistory.length > 8) chatHistory.shift();
     
   } catch (err) {
-    // NEVER get stuck — always give a helpful response
-    bubble.style.opacity = '1';
-    bubble.style.fontStyle = 'normal';
-    bubble.innerHTML = `I'm having trouble connecting to the AI engine right now, but I can still help!<br><br>
-      <strong>💡 Try one of these:</strong><br>
-      • "Student can't log in" → I'll find the right procedure<br>
-      • "How do I get to CH104" → Instant directions<br>
-      • "Check AD for ab1234cd" → Account lookup<br><br>
-      <button class="ai-cmd-btn" onclick="switchView('faq')">📚 Browse All Procedures</button>
-      <button class="ai-cmd-btn" onclick="switchView('wayfinding')">🗺️ Campus Maps</button>`;
+    const stopBtn = document.getElementById('stopAiBtn');
+    const askBtn = document.getElementById('askAiBtn');
+    if (stopBtn) stopBtn.classList.add('hidden');
+    if (askBtn) askBtn.classList.remove('hidden');
+    
+    if (err.name === 'AbortError') {
+      const existingText = bubble.innerHTML === "Let me think about that..." ? "" : bubble.innerHTML;
+      bubble.style.opacity = '1';
+      bubble.style.fontStyle = 'normal';
+      bubble.innerHTML = existingText + "<br><br><span style='color:var(--text2); font-size: 11px; opacity: 0.8;'><em>[Generation stopped by user]</em></span>";
+      if (existingText) {
+         chatHistory.push({ role: 'assistant', content: bubble.innerText });
+         if (chatHistory.length > 8) chatHistory.shift();
+      }
+    } else {
+      // NEVER get stuck — always give a helpful response
+      bubble.style.opacity = '1';
+      bubble.style.fontStyle = 'normal';
+      bubble.innerHTML = `I'm having trouble connecting to the AI engine right now, but I can still help!<br><br>
+        <strong>💡 Try one of these:</strong><br>
+        • "Student can't log in" → I'll find the right procedure<br>
+        • "How do I get to CH104" → Instant directions<br>
+        • "Check AD for ab1234cd" → Account lookup<br><br>
+        <button class="ai-cmd-btn" onclick="switchView('faq')">📚 Browse All Procedures</button>
+        <button class="ai-cmd-btn" onclick="switchView('wayfinding')">🗺️ Campus Maps</button>`;
+    }
   }
 }
 
@@ -1923,7 +1912,7 @@ function renderFormGuide() {
 // ----- TICKETS LOGIC -----
 let activeTickets = [];
 let allCachedTickets = [];
-let activeStatusFilters = ["New", "Open", "In Process", "On Hold", "Waiting for Customer Response"];
+let activeStatusFilters = ["New", "Open", "In Process"];
 
 async function suggestTdxComment(ticketId) {
   const ticket = activeTickets.find(t => t.id === ticketId);
@@ -4543,19 +4532,6 @@ async function adminAdResetPassword() {
     showToast("Network error resetting password", "error");
   }
 }
-async function showUnifiedProfile(query, displayName) {
-  appendMessage(`🔍 **Building Unified Profile for ${displayName}...**`, 'ai');
-  try {
-    const token = currentUser ? currentUser.token : '';
-    const res = await fetch(`/api/trace/${encodeURIComponent(query)}?token=${token}`);
-    const data = await res.json();
-    if (data.status === "success") {
-      renderTraceResponse(data.data, true);
-    } else {
-      showToast("Profile build failed", "error");
-    }
-  } catch (e) { showToast("Backend connection lost", "error"); }
-}
 
 function renderTraceResponse(data, isProfile = false) {
   let html = `<div class="trace-card">`;
@@ -4810,3 +4786,314 @@ window.saveTdxCredentials = async function() {
     statusEl.innerHTML = `Exception: ${err.message}`;
   }
 };
+
+// ==========================================
+//          SLA INTEL INTELLIGENCE SYSTEM
+// ==========================================
+
+let isAnalyticsInitialized = false;
+
+async function loadAnalyticsData() {
+  const filterEl = document.getElementById('analyticsDeptFilter');
+  const dept = filterEl ? filterEl.value : '';
+  const token = currentUser ? currentUser.token : '';
+  const headers = { 'Authorization': `Bearer ${token}` };
+  
+  showToast("Syncing SLA telemetry...", "info");
+  
+  try {
+    const query = dept ? `?dept=${encodeURIComponent(dept)}` : '';
+    
+    // Fetch Vitals
+    const resVitals = await fetch(`/api/analytics/vitals${query}`, { headers });
+    const dataVitals = await resVitals.json();
+    
+    if (dataVitals.status !== 'success') {
+      showToast(dataVitals.message || "Failed to fetch analytics vitals.", "error");
+      return;
+    }
+    
+    const vitals = dataVitals.data;
+    
+    // Populate stats
+    document.getElementById('stat-total-tickets').innerText = Number(vitals.total).toLocaleString();
+    document.getElementById('stat-sla-pct').innerText = `${vitals.sla_met_pct}%`;
+    document.getElementById('stat-sla-met').innerText = Number(vitals.sla_met).toLocaleString();
+    document.getElementById('stat-sla-breached').innerText = Number(vitals.sla_breached).toLocaleString();
+    document.getElementById('stat-avg-res').innerText = `${vitals.avg_resolution}h`;
+    
+    const incidents = vitals.classifications['Incident'] || 0;
+    document.getElementById('stat-incidents').innerText = Number(incidents).toLocaleString();
+    
+    // SLA Met percentage styling: Green if >= 90%, yellow if >= 75%, red otherwise
+    const pctEl = document.getElementById('stat-sla-pct');
+    if (pctEl) {
+      if (vitals.sla_met_pct >= 90) {
+        pctEl.style.color = '#10b981';
+      } else if (vitals.sla_met_pct >= 75) {
+        pctEl.style.color = '#f59e0b';
+      } else {
+        pctEl.style.color = 'var(--red)';
+      }
+    }
+    
+    // Populate Department Filter dropdown only on first load
+    if (!isAnalyticsInitialized && vitals.departments && filterEl) {
+      filterEl.innerHTML = '<option value="">All Departments</option>';
+      vitals.departments.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.innerText = d;
+        filterEl.appendChild(opt);
+      });
+      filterEl.value = dept;
+      isAnalyticsInitialized = true;
+    }
+    
+    // Parallel fetches for the rest of the telemetry views
+    const [resCategories, resTechs, resTrends] = await Promise.all([
+      fetch(`/api/analytics/categories${query}`, { headers }),
+      fetch(`/api/analytics/technicians${query}`, { headers }),
+      fetch(`/api/analytics/trends${query}`, { headers })
+    ]);
+    
+    const [dataCategories, dataTechs, dataTrends] = await Promise.all([
+      resCategories.json(),
+      resTechs.json(),
+      resTrends.json()
+    ]);
+    
+    // Render charts
+    renderTrendChart(dataTrends.data.trends);
+    renderCategoriesChart(dataCategories.data.services);
+    renderTechLeaderboard(dataTechs.data.technicians);
+    renderAnomalyAlerts(dataTrends.data.anomalies);
+    
+    showToast("SLA Analytics sync complete.", "success");
+  } catch (err) {
+    console.error("Analytics load error:", err);
+    showToast("Exception parsing SLA metrics.", "error");
+  }
+}
+
+function renderTrendChart(trends) {
+  const container = document.getElementById('trendChartContainer');
+  if (!container) return;
+  if (!trends || trends.length === 0) {
+    container.innerHTML = '<div class="ticket-placeholder">No volume trends found.</div>';
+    return;
+  }
+
+  const width = container.clientWidth || 500;
+  const height = 250;
+  const padding = 45;
+  const graphWidth = width - padding * 2;
+  const graphHeight = height - padding * 2;
+
+  const maxVal = Math.max(...trends.map(t => t.count)) || 100;
+  
+  const points = trends.map((t, idx) => {
+    const x = padding + (idx / (trends.length - 1 || 1)) * graphWidth;
+    const y = padding + graphHeight - (t.count / maxVal) * graphHeight;
+    return { x, y, ...t };
+  });
+
+  let svg = `<svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" style="overflow: visible;">
+    <defs>
+      <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.0"/>
+      </linearGradient>
+      <linearGradient id="strokeGradient" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="var(--accent)"/>
+        <stop offset="100%" stop-color="var(--accent2)"/>
+      </linearGradient>
+    </defs>
+  `;
+
+  // Draw Grid lines & labels
+  for (let i = 0; i <= 4; i++) {
+    const y = padding + (i / 4) * graphHeight;
+    const val = Math.round(maxVal - (i / 4) * maxVal);
+    svg += `
+      <line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="rgba(255,255,255,0.06)" stroke-dasharray="3"/>
+      <text x="${padding - 10}" y="${y + 4}" fill="var(--text2)" font-size="10" font-weight="600" text-anchor="end">${val}</text>
+    `;
+  }
+
+  // Draw Area Fill
+  let pathD = `M ${points[0].x} ${padding + graphHeight} `;
+  points.forEach(p => {
+    pathD += `L ${p.x} ${p.y} `;
+  });
+  pathD += `L ${points[points.length - 1].x} ${padding + graphHeight} Z`;
+  svg += `<path d="${pathD}" fill="url(#areaGradient)" />`;
+
+  // Draw Line
+  let lineD = `M ${points[0].x} ${points[0].y} `;
+  for (let i = 1; i < points.length; i++) {
+    lineD += `L ${points[i].x} ${points[i].y} `;
+  }
+  svg += `<path d="${lineD}" fill="none" stroke="url(#strokeGradient)" stroke-width="3" stroke-linecap="round" />`;
+
+  // Draw Data Points & titles for tooltips
+  points.forEach((p, idx) => {
+    const metPct = p.count > 0 ? Math.round((p.sla_met / p.count) * 100) : 0;
+    svg += `
+      <g class="chart-point" style="cursor: pointer;">
+        <circle cx="${p.x}" cy="${p.y}" r="4" fill="var(--bg)" stroke="var(--accent)" stroke-width="2"/>
+        <circle cx="${p.x}" cy="${p.y}" r="12" fill="transparent" />
+        <title>Month: ${p.month}\nVolume: ${p.count} tickets\nSLA Met: ${p.sla_met} (${metPct}%)\nSLA Breached: ${p.sla_breached}</title>
+      </g>
+    `;
+    
+    if (idx % 2 === 0 || trends.length < 8) {
+      svg += `<text x="${p.x}" y="${height - 10}" fill="var(--text2)" font-size="9" font-weight="600" text-anchor="middle">${p.month}</text>`;
+    }
+  });
+
+  svg += `</svg>`;
+  container.innerHTML = svg;
+}
+
+function renderCategoriesChart(categories) {
+  const container = document.getElementById('categoriesChartContainer');
+  if (!container) return;
+  if (!categories || categories.length === 0) {
+    container.innerHTML = '<div class="ticket-placeholder">No service categories found.</div>';
+    return;
+  }
+
+  const maxCount = Math.max(...categories.map(c => c.count)) || 1;
+  let html = `<div style="display: flex; flex-direction: column; gap: 14px; width: 100%;">`;
+
+  categories.forEach((cat, idx) => {
+    const pct = Math.round((cat.count / maxCount) * 100);
+    const hue = (idx * 30) % 360;
+    const gradient = `linear-gradient(90deg, hsla(${hue}, 80%, 55%, 0.7), hsla(${(hue + 30) % 360}, 85%, 65%, 0.85))`;
+    
+    html += `
+      <div style="display: flex; flex-direction: column; gap: 5px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 500;">
+          <span style="color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%;">${idx+1}. ${cat.service}</span>
+          <span style="color: var(--text2); font-weight: 600;">${cat.count} resolved <span style="font-size: 11px; color: var(--accent2); font-weight: normal;">(${cat.avg_resolution}h avg)</span></span>
+        </div>
+        <div style="height: 8px; width: 100%; background: rgba(255,255,255,0.03); border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.05);">
+          <div style="width: ${pct}%; height: 100%; background: ${gradient}; border-radius: 6px; transition: width 0.8s ease-out;"></div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+  container.innerHTML = html;
+}
+
+function renderTechLeaderboard(techs) {
+  const tbody = document.getElementById('techLeaderboardBody');
+  if (!tbody) return;
+  if (!techs || techs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: var(--text2);">No technicians found.</td></tr>';
+    return;
+  }
+
+  let html = '';
+  techs.forEach((t, idx) => {
+    const isSelf = t.name.toLowerCase() === (currentUser ? currentUser.username.toLowerCase() : '');
+    const rowBg = isSelf ? 'rgba(16, 185, 129, 0.04)' : '';
+    const nameStyle = isSelf ? 'color: var(--accent); font-weight: 700;' : 'color: var(--text);';
+    
+    let badgeBg = 'rgba(239, 68, 68, 0.1)';
+    let badgeColor = 'var(--red)';
+    if (t.sla_met_pct >= 90) {
+      badgeBg = 'rgba(16, 185, 129, 0.1)';
+      badgeColor = '#10b981';
+    } else if (t.sla_met_pct >= 75) {
+      badgeBg = 'rgba(245, 158, 11, 0.1)';
+      badgeColor = '#f59e0b';
+    }
+    
+    html += `
+      <tr style="border-bottom: 1px solid rgba(255,255,255,0.04); background: ${rowBg};">
+        <td style="padding: 10px 8px; display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; color: var(--text2); min-width: 18px;">#${idx+1}</span>
+          <span style="${nameStyle}">${t.name}</span>
+        </td>
+        <td style="padding: 10px 8px; text-align: center; font-weight: 600;">${t.count}</td>
+        <td style="padding: 10px 8px; text-align: center;">
+          <span style="padding: 3px 6px; border-radius: 6px; font-size: 11px; font-weight: 700; background: ${badgeBg}; color: ${badgeColor};">
+            ${t.sla_met_pct}%
+          </span>
+        </td>
+        <td style="padding: 10px 8px; text-align: right; color: var(--text2); font-size: 12px;">
+          Met: ${t.sla_met} / Breach: ${t.sla_breached}
+        </td>
+      </tr>
+    `;
+  });
+  tbody.innerHTML = html;
+}
+
+function renderAnomalyAlerts(anomalies) {
+  const container = document.getElementById('anomalyList');
+  if (!container) return;
+  if (!anomalies || anomalies.length === 0) {
+    container.innerHTML = '<div class="ticket-placeholder">No alerts detected.</div>';
+    return;
+  }
+
+  let html = '';
+  anomalies.forEach(a => {
+    let border = 'border-left: 4px solid var(--accent);';
+    let icon = 'ℹ️';
+    let titleColor = 'var(--accent2)';
+    let cardBg = 'rgba(255,255,255,0.02)';
+    
+    if (a.status === 'Critical') {
+      border = 'border-left: 4px solid var(--red); border: 1px solid rgba(239, 68, 68, 0.08); border-left: 4px solid var(--red);';
+      icon = '⚠️';
+      titleColor = 'var(--red)';
+      cardBg = 'rgba(239, 68, 68, 0.025)';
+    } else if (a.status === 'Warning') {
+      border = 'border-left: 4px solid #f59e0b; border: 1px solid rgba(245, 158, 11, 0.08); border-left: 4px solid #f59e0b;';
+      icon = '🔔';
+      titleColor = '#f59e0b';
+      cardBg = 'rgba(245, 158, 11, 0.025)';
+    }
+    
+    html += `
+      <div class="settings-card" style="margin: 0; padding: 12px 14px; background: ${cardBg}; ${border} border-radius: 8px; display: flex; align-items: flex-start; gap: 10px;">
+        <div style="font-size: 16px; margin-top: 1px;">${icon}</div>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 11px; font-weight: 700; color: ${titleColor}; text-transform: uppercase; letter-spacing: 0.5px;">${a.category.replace('_', ' ')} Pattern</span>
+            <span style="font-size: 10px; padding: 1px 4px; border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text2); font-weight: 600;">${a.count} tickets</span>
+          </div>
+          <p style="font-size: 12px; color: var(--text); line-height: 1.3; margin: 0;">${a.message}</p>
+        </div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+}
+
+function exportAnalyticsReport() {
+  const deptEl = document.getElementById('analyticsDeptFilter');
+  const dept = deptEl ? deptEl.value : '';
+  const token = currentUser ? currentUser.token : '';
+  const query = dept ? `?dept=${encodeURIComponent(dept)}` : '';
+  
+  showToast("Downloading SLA report...", "info");
+  
+  const url = `/api/analytics/export${query}&token=${token}`;
+  
+  const link = document.createElement('a');
+  link.href = url;
+  link.target = '_blank';
+  link.download = 'trc_ai_sla_export.csv';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  showToast("Report download triggered.", "success");
+}

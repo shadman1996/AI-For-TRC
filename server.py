@@ -614,36 +614,33 @@ def query_ad(query: str, user=Depends(get_session_user)):
         if isinstance(data, dict):
             data = [data]
 
-        # Augment with directory.json data if available using robust name matching
-        if os.path.exists("directory.json"):
-            try:
-                with open("directory.json", "r", encoding="utf-8") as f:
-                    local_data = json.load(f)
-                faculty = local_data.get("faculty", [])
+        # Augment with tdx_users database data since we migrated off directory.json
+        try:
+            for user in data:
+                starid = user.get("StarID")
+                display_name = user.get("DisplayName")
                 
-                for user in data:
-                    starid = user.get("StarID")
-                    display_name = user.get("DisplayName")
+                matched_f = None
+                if starid:
+                    res = database.query_tdx_user(starid)
+                    if res: matched_f = res[0]
+                if not matched_f and display_name:
+                    res = database.query_tdx_user(display_name)
+                    if res: matched_f = res[0]
                     
-                    matched_f = find_directory_match(display_name, starid, faculty)
-                    if matched_f:
-                        user["Office"] = matched_f.get("office")
-                        user["Phone"] = matched_f.get("phone")
-                        user["Email"] = matched_f.get("email")
-                        user["Headshot"] = matched_f.get("headshot")
-                        
-                        # Override N/A or empty Title/Department with rich directory details
-                        if not user.get("Title") or user.get("Title") == "N/A":
-                            user["Title"] = matched_f.get("title")
-                        if not user.get("Department") or user.get("Department") == "N/A":
-                            user["Department"] = ", ".join(matched_f.get("departments", [])) if isinstance(matched_f.get("departments"), list) else matched_f.get("departments")
-                    else:
-                        user["Office"] = None
-                        user["Phone"] = None
-                        user["Email"] = None
-                        user["Headshot"] = None
-            except Exception as ex:
-                print(f"Augment AD with directory failed: {ex}")
+                if matched_f:
+                    user["Office"] = matched_f.get("Office")
+                    user["Phone"] = matched_f.get("Phone")
+                    if not user.get("Email") or user.get("Email") == "N/A":
+                        user["Email"] = matched_f.get("PrimaryEmail")
+                    if not user.get("Title") or user.get("Title") == "N/A":
+                        user["Title"] = matched_f.get("Title")
+                    if not user.get("Department") or user.get("Department") == "N/A":
+                        user["Department"] = matched_f.get("Department")
+                    user["TechID"] = matched_f.get("TechID")
+        except Exception as ex:
+            import logging
+            logging.error(f"Augment AD with tdx_users DB failed: {ex}")
             
         return {"status": "success", "data": data}
     except Exception as e:
@@ -1152,24 +1149,39 @@ def query_sccm_mac(mac_address: str):
 def query_sccm_user(username: str):
     # Use the same logic as query_sccm but filter by LastLogonUserName
     ps_script = f"""
-    $baseUrl = 'https://sccm.smsu.edu/AdminService/v1.0/Device'
-    $filter = "?$filter=LastLogonUserName eq '{username}'"
-    $url = $baseUrl + $filter
-    
+    $url = "https://sccmpss.smsu.edu/AdminService/wmi/SMS_R_System?`$filter=LastLogonUserName eq '{username}'"
     try {{
-        $response = Invoke-RestMethod -Uri $url -Method Get -UseDefaultCredentials
-        if ($response.value) {{
-            $response.value | ConvertTo-Json -Depth 2
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $result = Invoke-RestMethod -Uri $url -UseDefaultCredentials -ErrorAction Stop
+        if ($result.value.Count -gt 0) {{
+            $out = @()
+            foreach ($device in $result.value) {{
+                $obj = @{{
+                    PCName = $device.Name
+                    ResourceID = $device.ItemKey
+                    User = $device.LastLogonUserName
+                    IPAddress = if ($device.IPAddresses) {{ $device.IPAddresses -join ', ' }} else {{ 'N/A' }}
+                    Model = $device.OperatingSystemNameandVersion
+                    LastSeen = if ($device.LastLogonTimestamp) {{ $device.LastLogonTimestamp }} else {{ 'Active' }}
+                    Status = 'Online'
+                }}
+                $out += $obj
+            }}
+            $out | ConvertTo-Json -Depth 2
         }} else {{
             "[]"
         }}
     }} catch {{
-        "[]"
+        Write-Output "ERROR: $($_.Exception.Message)"
     }}
     """
     try:
-        result = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True, timeout=10)
+        result = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True, timeout=15)
         out = result.stdout.strip()
+        
+        if out.startswith("ERROR:"):
+            return {"status": "error", "message": f"SCCM Query Failed: {out}"}
+            
         if not out or out == "[]":
             return {"status": "success", "data": []}
             
@@ -1179,9 +1191,9 @@ def query_sccm_user(username: str):
         devices = []
         for item in raw_data:
             devices.append({
-                "PCName": item.get("Name"),
+                "PCName": item.get("PCName"),
                 "Model": item.get("Model"),
-                "LastSeen": item.get("LastContactTime"),
+                "LastSeen": item.get("LastSeen"),
                 "User": item.get("LastLogonUserName"),
                 "IPAddress": item.get("IPAddresses"),
                 "Status": "Online" if item.get("IsOnline") else "Offline",
@@ -1882,6 +1894,270 @@ def create_tdx_ticket_api(data: dict, user=Depends(get_session_user)):
     if user["role"] not in ["sysadmin", "tech", "wag", "helpdesk"]:
         raise HTTPException(status_code=403, detail="Forbidden: Unauthorized to create tickets.")
     return _execute_tdx_ticket_creation(data)
+
+# --- SLA INTELLIGENCE ANALYTICS ---
+@app.get("/api/analytics/vitals")
+def get_analytics_vitals(dept: str = None, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Restricted to Technicians/Admins.")
+    
+    conn = database.get_db()
+    cursor = conn.cursor()
+    
+    query = "SELECT COUNT(*), AVG(resolution_hours) FROM tickets_historical"
+    params = []
+    if dept:
+        query += " WHERE acct_dept = ?"
+        params.append(dept)
+        
+    cursor.execute(query, params)
+    total, avg_res = cursor.fetchone()
+    if not total:
+        conn.close()
+        return {"status": "success", "data": {"total": 0, "avg_resolution": 0, "sla_met": 0, "sla_breached": 0, "sla_met_pct": 0, "classifications": {}, "departments": []}}
+        
+    # SLA Met and Breached
+    query_sla = "SELECT sla_status, COUNT(*) FROM tickets_historical"
+    if dept:
+        query_sla += " WHERE acct_dept = ?"
+    query_sla += " GROUP BY sla_status"
+    
+    cursor.execute(query_sla, params)
+    sla_counts = dict(cursor.fetchall())
+    sla_met = sla_counts.get("Met", 0)
+    sla_breached = sla_counts.get("Breached", 0)
+    sla_met_pct = round((sla_met / total) * 100, 1) if total > 0 else 0
+    
+    # Classifications count
+    query_class = "SELECT classification, COUNT(*) FROM tickets_historical"
+    if dept:
+        query_class += " WHERE acct_dept = ?"
+    query_class += " GROUP BY classification"
+    cursor.execute(query_class, params)
+    class_counts = dict(cursor.fetchall())
+    
+    # All distinct departments for dropdown filtering
+    cursor.execute("SELECT DISTINCT acct_dept FROM tickets_historical WHERE acct_dept IS NOT NULL AND acct_dept != '' ORDER BY acct_dept ASC")
+    depts = [r[0] for r in cursor.fetchall()]
+    
+    conn.close()
+    return {
+        "status": "success",
+        "data": {
+            "total": total,
+            "avg_resolution": round(avg_res or 0, 1),
+            "sla_met": sla_met,
+            "sla_breached": sla_breached,
+            "sla_met_pct": sla_met_pct,
+            "classifications": class_counts,
+            "departments": depts
+        }
+    }
+
+@app.get("/api/analytics/categories")
+def get_analytics_categories(dept: str = None, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Restricted access.")
+    
+    conn = database.get_db()
+    cursor = conn.cursor()
+    
+    # Categories / Service Breakdown
+    query_service = """
+        SELECT service, COUNT(*) as count, AVG(resolution_hours) as avg_res
+        FROM tickets_historical
+    """
+    params = []
+    if dept:
+        query_service += " WHERE acct_dept = ?"
+        params.append(dept)
+    query_service += " GROUP BY service ORDER BY count DESC LIMIT 10"
+    
+    cursor.execute(query_service, params)
+    services = [{"service": r[0], "count": r[1], "avg_resolution": round(r[2], 1)} for r in cursor.fetchall()]
+    
+    # Classifications breakdown
+    query_class = """
+        SELECT classification, COUNT(*) as count, AVG(resolution_hours) as avg_res
+        FROM tickets_historical
+    """
+    if dept:
+        query_class += " WHERE acct_dept = ?"
+    query_class += " GROUP BY classification ORDER BY count DESC"
+    
+    cursor.execute(query_class, params)
+    classifications = [{"classification": r[0], "count": r[1], "avg_resolution": round(r[2], 1)} for r in cursor.fetchall()]
+    
+    conn.close()
+    return {
+        "status": "success",
+        "data": {
+            "services": services,
+            "classifications": classifications
+        }
+    }
+
+@app.get("/api/analytics/technicians")
+def get_analytics_technicians(dept: str = None, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Restricted access.")
+    
+    conn = database.get_db()
+    cursor = conn.cursor()
+    
+    # Tech leaderboard
+    query_tech = """
+        SELECT prim_resp, COUNT(*) as count, 
+               SUM(CASE WHEN sla_status = 'Met' THEN 1 ELSE 0 END) as met,
+               SUM(CASE WHEN sla_status = 'Breached' THEN 1 ELSE 0 END) as breached
+        FROM tickets_historical
+    """
+    params = []
+    if dept:
+        query_tech += " WHERE acct_dept = ?"
+        params.append(dept)
+    query_tech += " GROUP BY prim_resp ORDER BY count DESC LIMIT 10"
+    
+    cursor.execute(query_tech, params)
+    techs = []
+    for r in cursor.fetchall():
+        name = r[0] if r[0] else "Unassigned"
+        met = r[2]
+        breached = r[3]
+        total = r[1]
+        pct = round((met / total) * 100, 1) if total > 0 else 0
+        techs.append({"name": name, "count": total, "sla_met": met, "sla_breached": breached, "sla_met_pct": pct})
+        
+    # Group breakdown
+    query_group = """
+        SELECT resp_group, COUNT(*) as count,
+               SUM(CASE WHEN sla_status = 'Met' THEN 1 ELSE 0 END) as met,
+               SUM(CASE WHEN sla_status = 'Breached' THEN 1 ELSE 0 END) as breached
+        FROM tickets_historical
+    """
+    if dept:
+        query_group += " WHERE acct_dept = ?"
+    query_group += " GROUP BY resp_group ORDER BY count DESC LIMIT 10"
+    
+    cursor.execute(query_group, params)
+    groups = []
+    for r in cursor.fetchall():
+        name = r[0] if r[0] else "Unassigned"
+        met = r[2]
+        breached = r[3]
+        total = r[1]
+        pct = round((met / total) * 100, 1) if total > 0 else 0
+        groups.append({"name": name, "count": total, "sla_met": met, "sla_breached": breached, "sla_met_pct": pct})
+        
+    conn.close()
+    return {
+        "status": "success",
+        "data": {
+            "technicians": techs,
+            "groups": groups
+        }
+    }
+
+@app.get("/api/analytics/trends")
+def get_analytics_trends(dept: str = None, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Restricted access.")
+    
+    conn = database.get_db()
+    cursor = conn.cursor()
+    
+    # Monthly volume trends
+    query_trends = """
+        SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as count,
+               SUM(CASE WHEN sla_status = 'Met' THEN 1 ELSE 0 END) as met,
+               SUM(CASE WHEN sla_status = 'Breached' THEN 1 ELSE 0 END) as breached
+        FROM tickets_historical
+    """
+    params = []
+    if dept:
+        query_trends += " WHERE acct_dept = ?"
+        params.append(dept)
+    query_trends += " GROUP BY month ORDER BY month ASC"
+    
+    cursor.execute(query_trends, params)
+    trends = [{"month": r[0], "count": r[1], "sla_met": r[2], "sla_breached": r[3]} for r in cursor.fetchall()]
+    
+    # Keyword alert analysis for anomaly detection
+    keywords = {
+        "toner_printer": ["toner", "printer", "papercut", "prtsrv"],
+        "phishing_security": ["phishing", "spam", "security", "compromise"],
+        "starid_auth": ["starid", "password", "lock", "authenticator", "mfa"],
+        "zoom_classroom": ["zoom", "poly", "classroom", "projector", "screen"]
+    }
+    
+    anomalies = []
+    for cat_name, kw_list in keywords.items():
+        clause = " OR ".join(["title LIKE ? COLLATE NOCASE" for _ in kw_list])
+        query_kw = f"SELECT COUNT(*) FROM tickets_historical WHERE ({clause})"
+        kw_params = [f"%{k}%" for k in kw_list]
+        if dept:
+            query_kw += " AND acct_dept = ?"
+            kw_params.append(dept)
+            
+        cursor.execute(query_kw, kw_params)
+        count = cursor.fetchone()[0]
+        
+        status = "Normal"
+        msg = f"Volume of {cat_name.replace('_', ' ')} support is stable."
+        if count > 500:
+            status = "Critical"
+            msg = f"CRITICAL: Extremely high volume of {cat_name.replace('_', ' ')} tickets detected ({count} records). Outline preventative actions."
+        elif count > 200:
+            status = "Warning"
+            msg = f"WARNING: Elevated support requests for {cat_name.replace('_', ' ')} ({count} records). Monitor equipment health."
+            
+        anomalies.append({
+            "category": cat_name,
+            "count": count,
+            "status": status,
+            "message": msg
+        })
+        
+    conn.close()
+    return {
+        "status": "success",
+        "data": {
+            "trends": trends,
+            "anomalies": anomalies
+        }
+    }
+
+@app.get("/api/analytics/export")
+def export_analytics_csv(dept: str = None, user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Unauthorized to export reports.")
+    
+    conn = database.get_db()
+    query = "SELECT * FROM tickets_historical"
+    params = []
+    if dept:
+        query += " WHERE acct_dept = ?"
+        params.append(dept)
+    query += " ORDER BY created_at DESC"
+    
+    cursor = conn.cursor()
+    cursor.execute(query, params)
+    
+    import io
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([d[0] for d in cursor.description]) # headers
+    for row in cursor.fetchall():
+        writer.writerow(row)
+    
+    conn.close()
+    
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=trc_ai_sla_export.csv"}
+    )
 
 # --- DEPLOYMENT ---
 @app.get("/api/deployment/info")

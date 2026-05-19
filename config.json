@@ -70,6 +70,11 @@
       "icon": "\ud83c\udf4e"
     },
     {
+      "id": "analytics",
+      "name": "SLA Analytics",
+      "icon": "\ud83d\udcc8"
+    },
+    {
       "id": "settings",
       "name": "Appearance Settings",
       "icon": "\ud83c\udfa8"
@@ -100,7 +105,8 @@
       "mist",
       "ise",
       "jamf",
-      "wayfinding"
+      "wayfinding",
+      "analytics"
     ],
     "wag": [
       "chat",
@@ -113,7 +119,8 @@
       "ise",
       "ad",
       "jamf",
-      "wayfinding"
+      "wayfinding",
+      "analytics"
     ],
     "sysadmin": [
       "chat",
@@ -127,7 +134,8 @@
       "ad",
       "jamf",
       "settings",
-      "wayfinding"
+      "wayfinding",
+      "analytics"
     ]
   },
   "tdx": {
@@ -135,6 +143,8 @@
     "wskey": "ENC(gAAAAABqC4JKJR6WCA458VavmQkplQA9SVUzarSmZvEwE0KnfB5QC0Oi3yPMb2xUahxBcCQTqLLepIEzCjjqeZ4EUW7I6Zt8GQ==)",
     "appid": "181",
     "ipaas_secret": "ENC(gAAAAABqBzNC9zIjx70l0bQb8kH1mhG8dmGBoUhVXzTJqv_ZtxpD3wuka8viN7ibZjO0z05oKARnjA_asBnFYySkOfj8n6W272ZFYIOhnMifphOe3AxCzrSiRU56Gj8w5NvG4yO2LXcH)",
-    "username": "TRChelpdesk"
+    "username": "TRChelpdesk",
+    "ticket_username": "wagahsan",
+    "ticket_password": "ENC(gAAAAABqDHmd4esdPjZe76A951PuYB_E6ACf-k82RW6ZiI6m2j51tMRlvQDDYtptWIcGw-jYxEcFw9og72_tIKzynKj7DD9OUw==)"
   }
 }
