@@ -2783,9 +2783,9 @@ function setWayfindingMapMode(mode) {
       googleMapViewer.classList.remove('hidden');
       if (currentlySelectedMap) {
         const query = BUILDING_NAMES[currentlySelectedMap.building.toUpperCase()] || currentlySelectedMap.building + ", Southwest Minnesota State University, Marshall, MN";
-        googleMapViewer.src = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=k&z=17&ie=UTF8&iwloc=&output=embed`;
+        googleMapViewer.src = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&z=19&ie=UTF8&iwloc=&output=embed`;
       } else {
-        googleMapViewer.src = `https://maps.google.com/maps?q=Southwest+Minnesota+State+University,+Marshall,+MN&t=k&z=16&ie=UTF8&iwloc=&output=embed`;
+        googleMapViewer.src = `https://maps.google.com/maps?q=Southwest+Minnesota+State+University,+Marshall,+MN&z=17&ie=UTF8&iwloc=&output=embed`;
       }
     }
   }
@@ -3024,10 +3024,10 @@ function renderActiveRouteStep() {
     }
   }
   
-  // Set the source for the route Google Map iframe using hybrid satellite imagery (z=18 for super close view)
+  // Set the source for the route Google Map iframe using default vector building map (z=19 for super close view)
   if (googleFrame) {
     const query = BUILDING_NAMES[targetBuildingCode.toUpperCase()] || targetBuildingCode + ", Southwest Minnesota State University, Marshall, MN";
-    const googleMapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=k&z=18&ie=UTF8&iwloc=&output=embed`;
+    const googleMapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&z=19&ie=UTF8&iwloc=&output=embed`;
     if (googleFrame.src !== googleMapUrl) {
       googleFrame.src = googleMapUrl;
     }
@@ -3155,7 +3155,7 @@ function showMap(map) {
   
   const query = BUILDING_NAMES[map.building.toUpperCase()] || map.building + ", Southwest Minnesota State University, Marshall, MN";
   if (googleMap) {
-    googleMap.src = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=k&z=18&ie=UTF8&iwloc=&output=embed`;
+    googleMap.src = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&z=19&ie=UTF8&iwloc=&output=embed`;
   }
   
   // Show the appropriate frame based on wayfindingMapMode

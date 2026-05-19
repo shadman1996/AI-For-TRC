@@ -2,8 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## [4.0.0] - 2026-05-18 (Current)
+## [4.0.0] - 2026-05-19 (Current)
 ### Added
+- **High-Density Mobile Responsiveness & Viewport Fit**: Hardened the entire application layout to fit strictly within any screen size (height 100vh) without vertical body scroll or horizontal window overflows. Main sidebar collapses into a slide-out hamburger overlay.
+- **Scrollable Results Containers**: Added flex scroll wrappers (`overflow-y: auto`) to Directory, SCCM, Mist, Cisco ISE, and Jamf search list elements to prevent lists from breaking viewport bounds on mobile.
+- **Indoor Vector Wayfinding Integration**: Updated Google Maps embeds to target high-zoom level vector view (`z=19`) for live indoor room, hallway, and annotation wayfinding across Southwest Minnesota State University (SMSU).
 - **Secure Ephemeral Dynamic Ticket Session Auth**: Implemented a secure dynamic credential mapping system that links a logged-in technician's Active Directory (AD) password securely in-memory under their random session token (no local plain-text file storage). The backend dynamically requests a user-level token from TeamDynamix `services.smsu.edu` to query and sync tickets strictly on their behalf.
 - **Intelligent Status Class Filtering**: Hardened `/api/tdx/tickets` to perform ticket search requests specifying active status class IDs (`New`, `In Process`, `On Hold`, and `Requested`). Completed/closed classes (`Resolved`, `Closed`, `Cancelled`) are bypassed at the API layer.
 - **Premium Glassmorphic Status Filter Bar**: Added an elegant, click-to-toggle horizontal glassmorphic filter row containing custom indicator lights and micro-animations for filtering across `New`, `Open`, `In Process`, `On Hold`, and `Waiting for Customer Response` states.

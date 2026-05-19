@@ -1999,3 +1999,27 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
   transition: opacity 0.3s ease-in-out;
 }
 
+/* --- RESPONSIVE WAYFINDING --- */
+@media (max-width: 900px) {
+  .wayfinding-container {
+    flex-direction: column !important;
+    height: auto !important;
+    overflow-y: auto !important;
+  }
+  .wayfinding-sidebar {
+    width: 100% !important;
+    min-width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border) !important;
+    height: auto !important;
+  }
+  .map-viewer {
+    width: 100% !important;
+    height: 550px !important;
+    min-height: 450px !important;
+  }
+  #pdfViewerContainer, #aiRouteViewerContainer {
+    height: 550px !important;
+  }
+}
+
