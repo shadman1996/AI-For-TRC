@@ -2730,6 +2730,84 @@ let currentRouteStepIndex = 0;
 let currentRouteBuildings = [];
 let currentRouteTargetHint = '';
 
+let wayfindingMapMode = 'indoor'; // 'indoor' or 'google'
+let currentlySelectedMap = null;
+
+const BUILDING_NAMES = {
+  "BA": "Bellows Academic, Southwest Minnesota State University, Marshall, MN",
+  "CH": "Charter Hall, Southwest Minnesota State University, Marshall, MN",
+  "SM": "Science and Math, Southwest Minnesota State University, Marshall, MN",
+  "SS": "Social Science, Southwest Minnesota State University, Marshall, MN",
+  "CC": "Conference Center, Southwest Minnesota State University, Marshall, MN",
+  "PE": "Physical Education, Southwest Minnesota State University, Marshall, MN",
+  "REC": "R/T Center, Southwest Minnesota State University, Marshall, MN",
+  "IL": "Individualized Learning, Southwest Minnesota State University, Marshall, MN",
+  "FA": "Fine Arts, Southwest Minnesota State University, Marshall, MN",
+  "FH": "Founders Hall, Southwest Minnesota State University, Marshall, MN",
+  "SC": "Student Center, Southwest Minnesota State University, Marshall, MN",
+  "ST": "Sweetland Hall, Southwest Minnesota State University, Marshall, MN",
+  "RA": "Regional Arts, Southwest Minnesota State University, Marshall, MN",
+  "LIB": "Library, Southwest Minnesota State University, Marshall, MN"
+};
+
+function setWayfindingMapMode(mode) {
+  wayfindingMapMode = mode;
+  
+  // Update Browse mode buttons active state
+  document.querySelectorAll('.toggle-mode-btn').forEach(btn => {
+    if (btn.innerText.toLowerCase().includes(mode === 'indoor' ? 'indoor' : 'google')) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+  
+  // Update Route mode buttons active state
+  document.querySelectorAll('.toggle-mode-btn-route').forEach(btn => {
+    if (btn.innerText.toLowerCase().includes(mode === 'indoor' ? 'indoor' : 'google')) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+  
+  // Switch visible iframes in Browse maps view
+  const pdfViewer = document.getElementById('pdfViewer');
+  const googleMapViewer = document.getElementById('googleMapViewer');
+  if (pdfViewer && googleMapViewer) {
+    if (mode === 'indoor') {
+      pdfViewer.classList.remove('hidden');
+      googleMapViewer.classList.add('hidden');
+    } else {
+      pdfViewer.classList.add('hidden');
+      googleMapViewer.classList.remove('hidden');
+      if (currentlySelectedMap) {
+        const query = BUILDING_NAMES[currentlySelectedMap.building.toUpperCase()] || currentlySelectedMap.building + ", Southwest Minnesota State University, Marshall, MN";
+        googleMapViewer.src = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=k&z=17&ie=UTF8&iwloc=&output=embed`;
+      } else {
+        googleMapViewer.src = `https://maps.google.com/maps?q=Southwest+Minnesota+State+University,+Marshall,+MN&t=k&z=16&ie=UTF8&iwloc=&output=embed`;
+      }
+    }
+  }
+  
+  // Switch visible iframes in Route maps view
+  const routePdfFrame = document.getElementById('routePdfFrame');
+  const routeGoogleMapFrame = document.getElementById('routeGoogleMapFrame');
+  if (routePdfFrame && routeGoogleMapFrame) {
+    if (mode === 'indoor') {
+      routePdfFrame.classList.remove('hidden');
+      routeGoogleMapFrame.classList.add('hidden');
+    } else {
+      routePdfFrame.classList.add('hidden');
+      routeGoogleMapFrame.classList.remove('hidden');
+      // Force update of current route Google map frame source
+      if (currentRouteStepsArray.length > 0) {
+        renderActiveRouteStep();
+      }
+    }
+  }
+}
+
 function toggleWayfindingSidebarMode(mode) {
   const panelRoute = document.getElementById('sidePanelRoute');
   const panelBrowse = document.getElementById('sidePanelBrowse');
@@ -2930,6 +3008,7 @@ function renderActiveRouteStep() {
   }
   
   const frame = document.getElementById('routePdfFrame');
+  const googleFrame = document.getElementById('routeGoogleMapFrame');
   const label = document.getElementById('overlayMapLabel');
   
   if (bestMap) {
@@ -2942,6 +3021,26 @@ function renderActiveRouteStep() {
     const fallbackUrl = `/floorplans/${targetFloorStr}Floor${targetBuildingCode}Plans.pdf`;
     if (frame && !frame.src.includes(fallbackUrl)) {
       frame.src = fallbackUrl;
+    }
+  }
+  
+  // Set the source for the route Google Map iframe using hybrid satellite imagery (z=18 for super close view)
+  if (googleFrame) {
+    const query = BUILDING_NAMES[targetBuildingCode.toUpperCase()] || targetBuildingCode + ", Southwest Minnesota State University, Marshall, MN";
+    const googleMapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=k&z=18&ie=UTF8&iwloc=&output=embed`;
+    if (googleFrame.src !== googleMapUrl) {
+      googleFrame.src = googleMapUrl;
+    }
+  }
+  
+  // Handle visibility based on mode
+  if (frame && googleFrame) {
+    if (wayfindingMapMode === 'indoor') {
+      frame.classList.remove('hidden');
+      googleFrame.classList.add('hidden');
+    } else {
+      frame.classList.add('hidden');
+      googleFrame.classList.remove('hidden');
     }
   }
 }
@@ -3034,6 +3133,7 @@ function filterMaps() {
 }
 
 function showMap(map) {
+  currentlySelectedMap = map;
   document.querySelectorAll('.map-item').forEach(i => i.classList.remove('active'));
   // Find the clicked item (brute force for mock)
   if (event) {
@@ -3043,6 +3143,7 @@ function showMap(map) {
   const placeholder = document.getElementById('mapPlaceholder');
   const viewerContainer = document.getElementById('pdfViewerContainer');
   const viewer = document.getElementById('pdfViewer');
+  const googleMap = document.getElementById('googleMapViewer');
   const title = document.getElementById('currentMapName');
   const btn = document.getElementById('btnOpenMapNewTab');
   
@@ -3051,7 +3152,31 @@ function showMap(map) {
   
   title.innerText = `${map.building} - ${map.floor} Floor`;
   viewer.src = map.url;
-  btn.onclick = () => window.open(map.url, '_blank');
+  
+  const query = BUILDING_NAMES[map.building.toUpperCase()] || map.building + ", Southwest Minnesota State University, Marshall, MN";
+  if (googleMap) {
+    googleMap.src = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&t=k&z=18&ie=UTF8&iwloc=&output=embed`;
+  }
+  
+  // Show the appropriate frame based on wayfindingMapMode
+  if (viewer && googleMap) {
+    if (wayfindingMapMode === 'indoor') {
+      viewer.classList.remove('hidden');
+      googleMap.classList.add('hidden');
+    } else {
+      viewer.classList.add('hidden');
+      googleMap.classList.remove('hidden');
+    }
+  }
+  
+  btn.onclick = () => {
+    if (wayfindingMapMode === 'indoor') {
+      window.open(map.url, '_blank');
+    } else {
+      const gUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+      window.open(gUrl, '_blank');
+    }
+  };
 }
 
 // ----- LINKS LOGIC -----

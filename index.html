@@ -416,14 +416,24 @@
 
           <!-- State 2: Standard PDF Viewer Container -->
           <div id="pdfViewerContainer" class="hidden" style="width:100%; height:100%; display: flex; flex-direction: column;">
-            <div style="padding: 12px 16px; background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+            <div style="padding: 12px 16px; background: rgba(0,0,0,0.3); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px;">
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 16px;">📄</span>
                 <span id="currentMapName" style="font-weight: 700; font-size: 14px; color: var(--text);">Map Viewer</span>
               </div>
-              <button id="btnOpenMapNewTab" class="btn-small" style="background: rgba(255,255,255,0.1); border: none; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">↗️ Open in New Tab</button>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <!-- Indoor / Outdoor Mode Switcher -->
+                <div class="map-mode-toggle" style="display: flex; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 2px;">
+                  <button class="toggle-mode-btn active" onclick="setWayfindingMapMode('indoor')" style="background: var(--accent2); color: #fff; border: none; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">🏢 Indoor</button>
+                  <button class="toggle-mode-btn" onclick="setWayfindingMapMode('google')" style="background: transparent; color: var(--text2); border: none; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">🌍 Google Map</button>
+                </div>
+                <button id="btnOpenMapNewTab" class="btn-small" style="background: rgba(255,255,255,0.1); border: none; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">↗️ Open in New Tab</button>
+              </div>
             </div>
-            <iframe id="pdfViewer" src="" style="width:100%; flex: 1; border:none; background: #fff;"></iframe>
+            <div style="flex: 1; position: relative;">
+              <iframe id="pdfViewer" src="" style="width:100%; height:100%; border:none; background: #fff;"></iframe>
+              <iframe id="googleMapViewer" class="hidden" src="" style="width:100%; height:100%; border:none; background: #222;"></iframe>
+            </div>
           </div>
 
           <!-- State 3: Ultra-Premium Integrated AI Step-by-Step Route Assistant -->
@@ -439,6 +449,11 @@
                   </div>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
+                  <!-- Indoor / Outdoor Mode Switcher for Steps -->
+                  <div class="map-mode-toggle" style="display: flex; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 2px;">
+                    <button class="toggle-mode-btn-route active" onclick="setWayfindingMapMode('indoor')" style="background: var(--accent2); color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">🏢 Indoor Floor</button>
+                    <button class="toggle-mode-btn-route" onclick="setWayfindingMapMode('google')" style="background: transparent; color: var(--text2); border: none; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s;">🌍 Google Map</button>
+                  </div>
                   <button class="btn-small" onclick="prevRouteStep()" id="btnPrevStep" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); padding: 8px 14px; border-radius: 10px; font-weight: 600; cursor: pointer;">⬅️ Prev</button>
                   <button class="btn-primary" onclick="nextRouteStep()" id="btnNextStep" style="background: var(--accent); border: none; padding: 8px 16px; border-radius: 10px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 12px rgba(239,68,68,0.2);">Next Step ➡️</button>
                 </div>
@@ -457,6 +472,7 @@
                 <span id="overlayMapLabel" style="color: #fff; font-weight: 700;">Loading...</span>
               </div>
               <iframe id="routePdfFrame" src="" style="width:100%; height:100%; border:none; background: #fff; width: 100%;"></iframe>
+              <iframe id="routeGoogleMapFrame" class="hidden" src="" style="width:100%; height:100%; border:none; background: #222; width: 100%;"></iframe>
             </div>
           </div>
         </div>

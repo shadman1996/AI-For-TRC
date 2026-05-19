@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - **Premium Glassmorphic Status Filter Bar**: Added an elegant, click-to-toggle horizontal glassmorphic filter row containing custom indicator lights and micro-animations for filtering across `New`, `Open`, `In Process`, `On Hold`, and `Waiting for Customer Response` states.
 - **Vibrant Status Indicator Badging**: Aligned all ticketing list card badges and ticket details elements to dynamically style themselves with status-matching backgrounds and border colors.
 - **Robust Client-Side Cache**: Transitioned the frontend ticketing engine to maintain an `allCachedTickets` array, performing ultra-fast local filter evaluations on filter pill clicks without incurring additional network latency or round-trips.
+- **Google Maps Outdoor/Indoor Integration**: Integrated dynamic Google Maps Satellite/Hybrid views directly into the Campus Wayfinding module. Users can toggle between high-fidelity indoor PDF floor plans and outdoor satellite navigation maps centered precisely on target buildings (Bellows Academic, Student Center, etc.). In step-by-step route planning, the Google Map frame automatically updates to center on the active building of each walking step.
 
 ### Changed
 - **Mock Fallback Data Alignment**: Updated `MOCK_TICKETS` statuses in `server.py` to reflect actual active categories (`New`, `Open`, `In Process`, `On Hold`, `Waiting for Customer Response`) to prevent them from being hidden by active-only ticketing rules.

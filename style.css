@@ -1976,3 +1976,26 @@ body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--tex
 .pulse-chip.offline { border-color: var(--red); opacity: 0.6; }
 .pulse-chip.offline span { color: var(--red); opacity: 1; font-weight: 700; }
 
+/* --- GOOGLE MAPS WAYFINDING TOGGLE --- */
+.map-mode-toggle button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.map-mode-toggle button.active {
+  background: var(--accent2) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+.toggle-mode-btn-route:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.toggle-mode-btn-route.active {
+  background: var(--accent2) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+#googleMapViewer, #routeGoogleMapFrame {
+  transition: opacity 0.3s ease-in-out;
+}
+

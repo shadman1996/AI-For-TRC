@@ -102,7 +102,8 @@ The TRC AI Assistant is built as a modular platform. Each module handles a speci
 
 ## 11. 🗺️ Wayfinding Module
 - **Purpose**: Interactive step-by-step campus navigation.
-- **Capabilities**: Multi-phase walking directions, synchronized floor plan overlays, elevation/stairway intelligence, ASCII 3D voxel route projection.
+- **Capabilities**: Multi-phase walking directions, synchronized floor plan overlays, elevation/stairway intelligence, ASCII 3D voxel route projection, and integrated Google Maps dual-view toggling.
+- **Google Maps Integration**: Offers a high-fidelity outdoor satellite/hybrid Google Map toggle view alongside indoor structural PDF floor plans. Google Maps features native indoor maps where available, and the viewer automatically re-centers and updates its location in real-time as users step through navigation phases.
 - **Roles**: Available to all users including `guest`.
 
 ---
