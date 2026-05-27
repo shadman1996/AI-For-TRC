@@ -492,7 +492,10 @@
               <h2 style="margin:0; font-size: 24px; font-weight: 700;">System Administrator Command Center</h2>
               <p style="margin:5px 0 0; color: var(--text2);">Real-time telemetry and cross-platform infrastructure monitoring.</p>
             </div>
-            <button class="btn-primary" onclick="loadSysAdminGlimpse()" style="background:var(--accent); font-weight:700; border-radius: 12px; padding: 10px 20px;">🔄 Refresh Dashboard</button>
+            <div style="display: flex; gap: 10px;">
+              <button class="btn-primary" onclick="syncSmsuKb()" style="background:var(--primary); font-weight:700; border-radius: 12px; padding: 10px 20px;" id="btnSyncKb">🌐 Sync SMSU Knowledge Base</button>
+              <button class="btn-primary" onclick="loadSysAdminGlimpse()" style="background:var(--accent); font-weight:700; border-radius: 12px; padding: 10px 20px;">🔄 Refresh Dashboard</button>
+            </div>
           </div>
 
           <!-- Top Metric Cards (Gradient Style) -->

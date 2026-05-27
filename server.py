@@ -1539,6 +1539,48 @@ def learn_kb(payload: LearnPayload, user=Depends(get_session_user)):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.get("/api/kb/search")
+def api_search_kb(q: str, token: str = None):
+    res = search_kb(q)
+    if res.get("status") == "success":
+        match = res["data"]
+        title = match.get("title", "Knowledge Match")
+        content = match.get("content", "")
+        source = match.get("source", "Permanent Memory")
+        
+        return {
+            "status": "success",
+            "data": {
+                "title": title,
+                "content": content,
+                "source": "Self-Learned" if "manual" in source.lower() else "TDX KB"
+            },
+            "results": [
+                {
+                    "item": {
+                        "q": title,
+                        "a": content
+                    }
+                }
+            ]
+        }
+    return {"status": "error", "message": "No match found.", "results": []}
+
+@app.post("/api/kb/sync")
+def api_sync_kb(user=Depends(get_session_user)):
+    if user["role"] not in ["sysadmin", "tech", "wag"]:
+        raise HTTPException(status_code=403, detail="Forbidden: Knowledge ingestion restricted.")
+    
+    import subprocess
+    import sys
+    try:
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scratch", "crawl_kb.py")
+        subprocess.Popen([sys.executable, script_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {"status": "success", "message": "Knowledge base sync started in the background. Vitals will update shortly."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to start crawler: {str(e)}"}
+
+
 @app.get("/api/admin/diagnose")
 def admin_diagnose(user=Depends(get_session_user)):
     """

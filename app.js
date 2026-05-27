@@ -4637,6 +4637,50 @@ async function loadSysAdminGlimpse() {
   }
 }
 
+async function syncSmsuKb() {
+  if (!currentUser) {
+    showToast("Please log in first", "error");
+    return;
+  }
+  
+  const btn = document.getElementById('btnSyncKb');
+  const originalHtml = btn.innerHTML;
+  btn.innerHTML = '⏳ Ingestion Started...';
+  btn.disabled = true;
+  btn.style.opacity = '0.7';
+  
+  try {
+    const res = await fetch(`/api/kb/sync?token=${currentUser.token}`, {
+      method: 'POST'
+    });
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      showToast("Crawl sync started successfully!", "success");
+      addNotification("SMSU KB Crawl Sync", "Playwright recursive crawler started in the background. Database cache density will grow shortly.", "info");
+      
+      // Keep disabled for 5 seconds to represent background ingestion initialization
+      setTimeout(() => {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        loadSysAdminGlimpse(); // Refresh vitals/density counter!
+      }, 5000);
+    } else {
+      showToast(`Ingestion failed: ${data.message}`, "error");
+      btn.innerHTML = originalHtml;
+      btn.disabled = false;
+      btn.style.opacity = '1';
+    }
+  } catch (err) {
+    showToast("Error starting KB sync. Backend offline.", "error");
+    btn.innerHTML = originalHtml;
+    btn.disabled = false;
+    btn.style.opacity = '1';
+  }
+}
+
+
 let patchLabData = [];
 let activeSelectedPatchId = null;
 
