@@ -730,6 +730,17 @@ async function checkEnterpriseTools(text) {
     }
     
     if (query.length < 2) return false;
+
+    // Check for generic queries to avoid hitting the backend with literal intent text
+    const genericTerms = [
+      "pc by starid", "user by starid", "someone by starid", "student by starid", "staff by starid",
+      "starid", "star id", "pc", "user", "someone", "student", "staff", "person", 
+      "computer", "machine", "device", "client", "account", "profile", "by starid"
+    ];
+    if (!starIdMatch && genericTerms.includes(query.toLowerCase())) {
+      appendMessage(`🐴 What is the **StarID** or **Name** of the user/PC you would like to search for? <br><br>*(e.g., type "Find ab1234cd" or "Search Bellows Academic")*`, 'ai');
+      return true;
+    }
     
     if (isDeepSearch && query.length === 8) {
       scrapePortal(query);
@@ -2162,10 +2173,34 @@ function renderTicketList(tickets) {
       <div class="ticket-card-meta">
         <span>🤠 ${ticket.requestor}</span>
         <span class="${priorityClass}">🚩 ${ticket.priority}</span>
+        <span id="eta-badge-${ticket.id}" style="font-size:10px; color:var(--accent2); opacity:0.8;"></span>
       </div>
     `;
     container.appendChild(card);
   });
+  
+  // Fire async resolution time predictions for each ticket
+  fetchResolutionPredictions(tickets);
+}
+
+async function fetchResolutionPredictions(tickets) {
+  const token = currentUser ? currentUser.token : '';
+  for (const ticket of tickets) {
+    try {
+      const res = await fetch('/api/tdx/tickets/predict-resolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ title: ticket.title, service: ticket.service || '', token })
+      });
+      const data = await res.json();
+      const badge = document.getElementById(`eta-badge-${ticket.id}`);
+      if (badge && data.data) {
+        const d = data.data;
+        badge.innerHTML = `⏱️ ~${d.avg_hours}h <span style="opacity:0.6; font-size:9px;">(${d.sample_size} cases)</span>`;
+        badge.title = `Estimated resolution: ${d.avg_hours}h avg | Fastest: ${d.fastest_hours}h | Based on ${d.sample_size} similar historical tickets`;
+      }
+    } catch (e) { /* silent — non-critical */ }
+  }
 }
 
 async function showTicketDetail(id) {
@@ -2264,10 +2299,58 @@ async function showTicketDetail(id) {
       <h4 style="font-size: 11px; color: var(--accent2); margin-top: 20px;">AI Recommended Procedures</h4>
       <div id="kbSuggestionList" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;"></div>
     </div>
+    
+    <div id="duplicateDetectionContainer" style="margin-top:20px;"></div>
   `;
   
   generateAIBriefing(ticket);
   matchKnowledgeBase(ticket);
+  checkForDuplicates(ticket);
+}
+
+async function checkForDuplicates(ticket) {
+  const container = document.getElementById('duplicateDetectionContainer');
+  if (!container) return;
+  
+  try {
+    const token = currentUser ? currentUser.token : '';
+    const res = await fetch('/api/history/duplicates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ title: ticket.title, token })
+    });
+    const data = await res.json();
+    
+    if (data.duplicates && data.duplicates.length > 0) {
+      const dupsHtml = data.duplicates.map(d => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:rgba(0,0,0,0.2); border-radius:8px; margin-top:6px; font-size:12px;">
+          <div style="flex:1;">
+            <div style="font-weight:600; color:var(--text);">#${d.id}: ${d.title}</div>
+            <div style="color:var(--text2); margin-top:2px;">
+              🔧 ${d.tech} · ${d.group} · ⏱️ ${d.resolution_hours}h · ${d.sla_status} SLA
+            </div>
+          </div>
+          <span style="background:rgba(251,191,36,0.15); color:#fbbf24; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:700; white-space:nowrap;">
+            ${d.confidence_pct}% match
+          </span>
+        </div>
+      `).join('');
+      
+      container.innerHTML = `
+        <div style="background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.2); border-radius:12px; padding:14px 16px; border-left:3px solid #fbbf24;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <span style="font-size:16px;">⚠️</span>
+            <span style="font-size:11px; font-weight:700; color:#fbbf24; text-transform:uppercase; letter-spacing:0.5px;">Similar Historical Cases Found</span>
+            <span style="font-size:10px; color:var(--text2); opacity:0.7;">${data.duplicates.length} match${data.duplicates.length > 1 ? 'es' : ''}</span>
+          </div>
+          <p style="font-size:12px; color:var(--text2); margin-bottom:8px;">These past tickets had similar titles — the resolution patterns may help:</p>
+          ${dupsHtml}
+        </div>
+      `;
+    }
+  } catch (e) {
+    console.error("Duplicate detection error:", e);
+  }
 }
 
 async function matchKnowledgeBase(ticket) {
@@ -2592,19 +2675,52 @@ function askAIAboutTicket() {
   streamAIResponse(contextPrompt, typingId);
 }
 
-function generateHandoffReport() {
+async function generateHandoffReport() {
   if (activeTickets.length === 0) return;
   
+  showToast("Generating RAG-enriched handoff report...", "info");
+  
+  // Fetch RAG context for all active tickets
+  let ragContexts = {};
+  try {
+    const titles = activeTickets.map(t => ({ id: t.id, title: t.title }));
+    const res = await fetch('/api/tickets/handoff-context', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentUser.token}` },
+      body: JSON.stringify({ titles, token: currentUser.token })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      ragContexts = data.contexts || {};
+    }
+  } catch (e) {
+    console.error("Handoff RAG fetch error:", e);
+  }
+  
   let report = `TRC SHIFT HANDOFF REPORT - ${new Date().toLocaleString()}\n`;
+  report += `Generated by: ${currentUser ? currentUser.username : 'Unknown'}\n`;
+  report += `Active Tickets: ${activeTickets.length}\n`;
   report += `==================================================\n\n`;
   
   activeTickets.forEach(t => {
     report += `[#${t.id}] ${t.title}\n`;
-    report += `Status: ${t.status} | Priority: ${t.priority}\n`;
+    report += `Status: ${t.status} | Priority: ${t.priority} | Service: ${t.service || 'N/A'}\n`;
     report += `Requestor: ${t.requestor}\n`;
-    report += `Brief: ${t.description.substring(0, 100)}...\n`;
-    report += `--------------------------------------------------\n`;
+    report += `Brief: ${t.description.substring(0, 200)}...\n`;
+    
+    // Inject RAG context
+    const rag = ragContexts[String(t.id)];
+    if (rag && rag !== "No similar historical cases found.") {
+      report += `\n  📊 SIMILAR HISTORICAL CASES:\n`;
+      rag.split('\n').forEach(line => {
+        if (line.trim()) report += `  ${line}\n`;
+      });
+    }
+    report += `--------------------------------------------------\n\n`;
   });
+  
+  report += `\n=== END OF REPORT ===\n`;
+  report += `Powered by TRC AI Assistant v4.3 — Historical RAG Engine (5,477 cases)\n`;
   
   const blob = new Blob([report], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -2613,7 +2729,8 @@ function generateHandoffReport() {
   a.download = `handoff_report_${new Date().toISOString().split('T')[0]}.txt`;
   a.click();
   
-  appendMessage("📑 **Handoff Report Generated!** I've prepared a summary of all active tickets for the next shift.", 'ai');
+  showToast("Handoff report downloaded with historical intelligence!", "success");
+  appendMessage("📑 **RAG-Enriched Handoff Report Generated!** Each ticket includes similar historical cases from our 5,477-ticket archive to help the incoming tech.", 'ai');
 }
 
 // ----- WAYFINDING LOGIC -----
@@ -3607,6 +3724,73 @@ async function triggerRemoteAction(resourceId, actionType, btnEl) {
   });
 }
 
+function onPredefScriptChange() {
+  const select = document.getElementById('runnerPredefScripts');
+  const pathInput = document.getElementById('runnerScriptPath');
+  if (select.value === 'custom') {
+    pathInput.value = '';
+    pathInput.disabled = false;
+  } else {
+    pathInput.value = select.value;
+    pathInput.disabled = true;
+  }
+}
+
+function triggerRemoteScript() {
+  const pcInput = document.getElementById('runnerPcName');
+  const pathInput = document.getElementById('runnerScriptPath');
+  const consoleEl = document.getElementById('runnerConsole');
+  const btn = document.getElementById('btnRunScript');
+  
+  const pc = pcInput.value.trim();
+  const script = pathInput.value.trim();
+  
+  if (!pc || !script) {
+    showToast("Please enter both target PC Name and Script Path.", "warning");
+    return;
+  }
+  
+  // Enforce secure WAG PIN approval gate before remote script execution!
+  requestWagApproval("Remote PowerShell script execution on " + pc, async () => {
+    btn.disabled = true;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "<span>🔄</span> Dispatched...";
+    
+    consoleEl.style.color = "#a7f3d0"; // Green for execution logs
+    consoleEl.innerText = `[${new Date().toLocaleTimeString()}] 🔄 Connecting to remote PC '${pc}' via WinRM...\n[${new Date().toLocaleTimeString()}] ⏳ Transferring and running script file: ${script}\n[${new Date().toLocaleTimeString()}] 🚀 Executing Invoke-Command (WSMan)... Please wait up to 45 seconds...\n`;
+    
+    try {
+      const res = await fetch('/api/admin/remote-script', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pc_name: pc, script_path: script })
+      });
+      const data = await res.json();
+      
+      if (data.status === 'success') {
+        consoleEl.innerText += `\n[${new Date().toLocaleTimeString()}] ✅ REMOTE EXECUTION SUCCESSFUL:\n\n` + data.output;
+        showToast("PowerShell script executed successfully!", "success");
+      } else {
+        consoleEl.style.color = "#f87171"; // Red for failures
+        consoleEl.innerText += `\n[${new Date().toLocaleTimeString()}] ❌ REMOTE EXECUTION FAILED:\n\n` + (data.message || "Unknown error occurred.");
+        showToast("Remote script failed: " + (data.message || "Execution error"), "error");
+      }
+    } catch (e) {
+      consoleEl.style.color = "#f87171"; // Red for errors
+      consoleEl.innerText += `\n[${new Date().toLocaleTimeString()}] ❌ NETWORK ERROR: Failed to communicate with TRC AI Gateway.`;
+      showToast("Network error executing script", "error");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+      
+      // Auto-refresh audit logs view if defined
+      if (typeof loadAuditLogs === 'function') {
+        loadAuditLogs();
+      }
+    }
+  });
+}
+
 let pendingApprovalTask = null;
 
 function requestWagApproval(title, task) {
@@ -3721,6 +3905,47 @@ async function performLogin() {
   } finally {
     btn.disabled = false;
     btn.innerText = "Sign In";
+  }
+}
+
+async function performSsoLogin() {
+  const ssoBtn = document.getElementById('ssoBtn');
+  const errorDiv = document.getElementById('loginError');
+  
+  ssoBtn.disabled = true;
+  ssoBtn.innerText = "🐴 Authenticating via SSO...";
+  errorDiv.innerText = "";
+  
+  try {
+    const res = await fetch('/api/auth/sso');
+    const data = await res.json();
+    
+    if (data.status === "success") {
+      currentUser = {
+        token: data.token,
+        role: data.role,
+        username: data.username
+      };
+      USER_MODULES = data.modules || [];
+      localStorage.setItem('trc_session', JSON.stringify(currentUser));
+      localStorage.setItem('trc_modules', JSON.stringify(USER_MODULES));
+      localStorage.setItem('trc_login_time', Date.now().toString());
+      document.getElementById('loginOverlay').classList.add('hidden');
+      const appDiv = document.querySelector('.app');
+      if (appDiv) appDiv.style.display = 'flex';
+      updateProfileUI();
+      renderSidebar();
+      switchView(USER_MODULES[0] || 'chat');
+      await loadTickets();
+      appendMessage(`🐴 **Welcome back, ${data.username}!** (Logged in via SMSU StarID SSO). How can I help you today?`, 'ai');
+    } else {
+      errorDiv.innerText = data.message || "SSO Login failed.";
+    }
+  } catch (e) {
+    errorDiv.innerText = "Error connecting to SSO authentication service.";
+  } finally {
+    ssoBtn.disabled = false;
+    ssoBtn.innerText = "🐴 One-Click SMSU SSO";
   }
 }
 
@@ -4403,8 +4628,186 @@ async function loadSysAdminGlimpse() {
         }
       });
     }
+    // Automatically trigger System Doctor background diagnostics scan on tab open!
+    runSystemDoctor();
+    // Automatically load proposed optimization patches on tab open!
+    loadPatches();
   } catch (e) {
     console.error("Failed to load SysAdmin Glimpse", e);
+  }
+}
+
+let patchLabData = [];
+let activeSelectedPatchId = null;
+
+async function loadPatches() {
+  if (!currentUser) return;
+  const container = document.getElementById('patchesListContainer');
+  if (!container) return;
+  
+  container.innerHTML = '<div style="color: var(--text-muted); padding:20px; font-style:italic;">Loading proposed patches...</div>';
+  
+  try {
+    const res = await fetch(`/api/admin/patches?token=${currentUser.token}`);
+    const data = await res.json();
+    if (data.status === 'success') {
+      patchLabData = data.patches;
+      renderPatchesList();
+      
+      // If we had an active selection, refresh its view, else select first
+      if (activeSelectedPatchId) {
+        showPatchDiff(activeSelectedPatchId);
+      } else if (patchLabData.length > 0) {
+        showPatchDiff(patchLabData[0].id);
+      }
+    } else {
+      container.innerHTML = `<div style="color: var(--red); padding:10px;">Error: ${data.detail || data.message || 'Failed to list patches.'}</div>`;
+    }
+  } catch (e) {
+    container.innerHTML = '<div style="color: var(--red); padding:10px;">Failed to load patches from server.</div>';
+  }
+}
+
+function renderPatchesList() {
+  const container = document.getElementById('patchesListContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  
+  patchLabData.forEach(patch => {
+    const activeClass = patch.id === activeSelectedPatchId ? 'active' : '';
+    const statusText = patch.status === 'Applied' ? '🟢 Applied' : '🟡 Available';
+    const statusColor = patch.status === 'Applied' ? 'var(--green)' : 'var(--accent)';
+    
+    const card = document.createElement('div');
+    card.className = `patch-item-card ${activeClass}`;
+    card.onclick = () => showPatchDiff(patch.id);
+    card.innerHTML = `
+      <div class="patch-meta">
+        <span class="patch-title">${patch.name}</span>
+        <span style="font-size:10px; font-weight:700; color:${statusColor};">${statusText}</span>
+      </div>
+      <div class="patch-desc">${patch.description}</div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function showPatchDiff(patchId) {
+  activeSelectedPatchId = patchId;
+  
+  // Highlight card in list
+  const cards = document.querySelectorAll('.patch-item-card');
+  cards.forEach((c, idx) => {
+    if (patchLabData[idx] && patchLabData[idx].id === patchId) {
+      c.classList.add('active');
+    } else {
+      c.classList.remove('active');
+    }
+  });
+  
+  const patch = patchLabData.find(p => p.id === patchId);
+  if (!patch) return;
+  
+  document.getElementById('selectedPatchTitle').innerText = patch.name;
+  
+  const statusBadge = document.getElementById('selectedPatchStatus');
+  statusBadge.innerText = patch.status;
+  if (patch.status === 'Applied') {
+    statusBadge.className = 'status-badge online';
+    statusBadge.style.background = 'rgba(16, 185, 129, 0.1)';
+    statusBadge.style.color = '#34d399';
+    document.getElementById('btnApplyPatch').style.display = 'none';
+    document.getElementById('btnRevertPatch').style.display = 'flex';
+  } else {
+    statusBadge.className = 'status-badge offline';
+    statusBadge.style.background = 'rgba(245, 158, 11, 0.1)';
+    statusBadge.style.color = '#fbbf24';
+    document.getElementById('btnApplyPatch').style.display = 'flex';
+    document.getElementById('btnRevertPatch').style.display = 'none';
+  }
+  
+  document.getElementById('selectedPatchDesc').innerText = patch.description;
+  
+  // Render visual diff content
+  const diffContent = document.getElementById('patchDiffContent');
+  diffContent.innerHTML = '';
+  
+  patch.diff.forEach(line => {
+    const lineEl = document.createElement('div');
+    if (line.type === 'del') {
+      lineEl.className = 'diff-line diff-line-del';
+      lineEl.innerText = line.text;
+    } else if (line.type === 'add') {
+      lineEl.className = 'diff-line diff-line-add';
+      lineEl.innerText = line.text;
+    } else {
+      lineEl.className = 'diff-line diff-line-normal';
+      lineEl.innerText = line.text;
+    }
+    diffContent.appendChild(lineEl);
+  });
+  
+  document.getElementById('patchDiffPanel').style.display = 'flex';
+  document.getElementById('patchActionsGroup').style.display = 'flex';
+}
+
+async function triggerApplyPatch() {
+  if (!activeSelectedPatchId || !currentUser) return;
+  const btn = document.getElementById('btnApplyPatch');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span>⏳</span> Compiling & Applying...';
+  
+  try {
+    const res = await fetch(`/api/admin/patches/apply?token=${currentUser.token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patch_id: activeSelectedPatchId })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast(data.message || 'Patch applied successfully!', 'success');
+      appendMessage(`🛠️ **Patch Lab Success**: Applied optimization patch **"${patchLabData.find(p => p.id === activeSelectedPatchId).name}"** successfully. Live filesystem modification compile check: PASS 🟢`, 'ai');
+      await loadPatches();
+    } else {
+      showToast(data.message || 'Failed to apply patch.', 'error');
+      alert(`Patch Application Failed:\n\n${data.message}`);
+    }
+  } catch (e) {
+    showToast('Network error applying patch.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+  }
+}
+
+async function triggerRevertPatch() {
+  if (!activeSelectedPatchId || !currentUser) return;
+  const btn = document.getElementById('btnRevertPatch');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span>⏳</span> Reverting...';
+  
+  try {
+    const res = await fetch(`/api/admin/patches/revert?token=${currentUser.token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patch_id: activeSelectedPatchId })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast(data.message || 'Patch reverted successfully!', 'success');
+      appendMessage(`🔄 **Patch Lab Reverted**: Restored backup files and compiled successfully. Live filesystem reverted cleanly: PASS 🟢`, 'ai');
+      await loadPatches();
+    } else {
+      showToast(data.message || 'Failed to revert patch.', 'error');
+      alert(`Patch Reversion Failed:\n\n${data.message}`);
+    }
+  } catch (e) {
+    showToast('Network error reverting patch.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
   }
 }
 
@@ -4697,7 +5100,7 @@ function showSyncDiagnostic() {
             <span>⚙️</span> Update Live TDX Admin Credentials
           </h4>
           <p style="margin:0 0 12px 0; font-size:11px; color:var(--text2); line-height:1.4;">
-            Paste your active environment BEID and WebServicesKey below. The assistant will automatically encrypt them securely using AES-256 before saving to <code>config.json</code>.
+            Paste your active environment BEID and WebServicesKey below. The assistant will automatically encrypt them securely using AES-128 before saving to <code>config.json</code>.
           </p>
           <div style="display:flex; flex-direction:column; gap:8px;">
             <input type="text" id="adminTdxBeidInput" placeholder="Enter BEID (e.g. 1af3dccb-...)" style="background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; color:#fff; padding:8px 12px; font-size:12px;" />
@@ -5096,4 +5499,120 @@ function exportAnalyticsReport() {
   document.body.removeChild(link);
   
   showToast("Report download triggered.", "success");
+}
+
+async function runSystemDoctor() {
+  if (!currentUser) return;
+  
+  showToast("Running System Doctor diagnostics...", "info");
+  
+  try {
+    const res = await fetch(`/api/admin/diagnose?token=${currentUser.token}`);
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      const g = data;
+      
+      // Update Vitals
+      const healthEl = document.getElementById('docHealthVal');
+      if (healthEl) {
+        healthEl.innerText = g.health.toUpperCase() + (g.health === 'Healthy' ? ' 🟢' : (g.health === 'Warning' ? ' 🟡' : ' 🔴'));
+        if (g.health === 'Healthy') {
+          healthEl.style.color = 'var(--green)';
+        } else if (g.health === 'Warning') {
+          healthEl.style.color = '#f59e0b';
+        } else {
+          healthEl.style.color = 'var(--red)';
+        }
+      }
+      
+      const latencyEl = document.getElementById('docDbLatencyVal');
+      if (latencyEl) {
+        latencyEl.innerText = g.latency_ms + ' ms';
+        if (g.latency_ms > 50) {
+          latencyEl.style.color = '#f59e0b';
+        } else if (g.latency_ms === -1) {
+          latencyEl.innerText = 'OFFLINE 🔴';
+          latencyEl.style.color = 'var(--red)';
+        } else {
+          latencyEl.style.color = 'var(--accent2)';
+        }
+      }
+      
+      const logSizeEl = document.getElementById('docLogSizeVal');
+      if (logSizeEl) logSizeEl.innerText = g.metrics.log_size_kb + ' KB';
+      
+      const dbSizeEl = document.getElementById('docDbSizeVal');
+      if (dbSizeEl) dbSizeEl.innerText = g.metrics.db_size_kb.toLocaleString() + ' KB';
+      
+      // Update Log Panel
+      const logPanel = document.getElementById('docLogPanel');
+      if (logPanel) {
+        if (!g.logs || g.logs.length === 0) {
+          logPanel.innerHTML = '<div style="color:var(--green); font-style:italic;">All log streams clear. No system errors detected.</div>';
+        } else {
+          let html = '';
+          g.logs.forEach(line => {
+            let color = '#fff';
+            if (line.toLowerCase().includes('error')) color = 'var(--red)';
+            else if (line.toLowerCase().includes('warning') || line.toLowerCase().includes('403')) color = '#f59e0b';
+            else if (line.toLowerCase().includes('security alert')) color = '#c084fc';
+            
+            html += `<div style="color:${color}; border-bottom:1px solid rgba(255,255,255,0.03); padding-bottom:4px; word-break:break-all;">${line}</div>`;
+          });
+          logPanel.innerHTML = html;
+        }
+      }
+      
+      // Update Recommendations Panel
+      const recsPanel = document.getElementById('docRecsPanel');
+      if (recsPanel) {
+        if (!g.diagnoses || g.diagnoses.length === 0) {
+          recsPanel.innerHTML = '<div style="color:var(--text2); font-size:12.5px; font-style:italic;">No recommendations found. All systems optimal!</div>';
+        } else {
+          let html = '';
+          g.diagnoses.forEach(d => {
+            let border = 'border-left: 4px solid var(--accent);';
+            let icon = '✅';
+            let titleColor = 'var(--accent2)';
+            let cardBg = 'rgba(255,255,255,0.02)';
+            
+            if (d.status === 'Critical') {
+              border = 'border-left: 4px solid var(--red); border: 1px solid rgba(239, 68, 68, 0.08); border-left: 4px solid var(--red);';
+              icon = '🚨';
+              titleColor = 'var(--red)';
+              cardBg = 'rgba(239, 68, 68, 0.025)';
+            } else if (d.status === 'Warning') {
+              border = 'border-left: 4px solid #f59e0b; border: 1px solid rgba(245, 158, 11, 0.08); border-left: 4px solid #f59e0b;';
+              icon = '⚠️';
+              titleColor = '#f59e0b';
+              cardBg = 'rgba(245, 158, 11, 0.025)';
+            }
+            
+            html += `
+              <div style="margin: 0; padding: 12px 14px; background: ${cardBg}; ${border} border-radius: 8px; display: flex; flex-direction: column; gap: 6px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size: 11px; font-weight: 700; color: ${titleColor}; text-transform: uppercase; letter-spacing: 0.5px;">${icon} ${d.category}</span>
+                  <span style="font-size: 10px; padding: 1px 4px; border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text2); font-weight: 600;">${d.status}</span>
+                </div>
+                <strong style="font-size:13px; color:#fff; margin:0;">${d.title}</strong>
+                <p style="font-size: 12px; color: var(--text2); line-height: 1.4; margin: 0;">${d.description}</p>
+                <div style="background:rgba(0,0,0,0.15); border-radius:6px; padding:8px 10px; font-size:11.5px; line-height:1.4; color:var(--accent2); margin-top:2px;">
+                  <strong>🔧 Recommended Fix:</strong> ${d.fix}
+                </div>
+              </div>
+            `;
+          });
+          recsPanel.innerHTML = html;
+        }
+      }
+      
+      showToast("System Doctor scan complete!", "success");
+    } else {
+      showToast(data.message || "Failed to trigger scan", "error");
+    }
+  } catch (err) {
+    console.error("System Doctor scan error:", err);
+    showToast("Exception triggering autonomous scan.", "error");
+  }
 }

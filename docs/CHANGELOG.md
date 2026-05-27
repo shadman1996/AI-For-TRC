@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.4.0] - 2026-05-27
+### Added
+- **Active Directory SSO & Normalisation**: Auto-authenticates domain workstation principals (`System.Security.Principal.WindowsIdentity`) via `/api/auth/sso` and provisions localized session directories.
+- **TDX Lockout Protection Shield**: Intercepts initial TDX credential failures and blocks subsequent active requests inside an in-memory session blocklist (`FAILED_TDX_LOGINS`), shielding StarIDs from university-wide Active Directory lockouts.
+- **Fuzzy StarID & Technician Lookups**: Fuzzy-resolves administrative samaccountnames (`wagahsan` ➔ `Shadman Ahsan`) and normalizes StarIDs to `@minnstate.edu` to map accounts with authorized TDX licensed technician emails (`vg6340ah@minnstate.edu`), unlocking live ticketing sync.
+- **Human-in-the-Loop Code Patch Lab**: Added a frosted glassmorphic card `#patchLabCard` to apply and revert optimizations on the fly. Includes high-contrast color diff parsing, safe `replace_last` localized file modification, dynamic double-occurrence checks (`content.count(replacement_code) >= 2`) to solve configuration dictionary collisions, rolling backups (`server.py.bak`), and strict FastAPI syntax compilation guards (`py_compile`).
+- **Remote PowerShell Script Runner**: Added `#remoteRunnerCard` terminal console interface to remotely execute `.ps1` administrative tasks on domain-joined PCs. Integrates fast WSMan connection pinging (`Test-WSMan`), remote execution coping (`Invoke-Command -FilePath`), secure WAG PIN verification modal approvals (`2026`), and audit logging.
+
+## [4.3.0] - 2026-05-26
+### Added
+- **RAG-Powered Shift Handoff Report**: The "Shift Handoff Report" button now fetches similar historical cases from the 5,477-ticket archive for each active ticket. The downloaded report includes a `SIMILAR HISTORICAL CASES` section per ticket showing which technician resolved similar issues, the department, and resolution time.
+- **Smart Urgency Detection**: Replaced the keyword-only mock urgency analyzer (`/api/ai/analyze-urgency`) with a real intelligence engine that scores urgency (0-100) using three signal layers: critical/high-priority keyword detection, historical resolution speed analysis (tickets resolved in <4h historically indicate urgency), and classification type matching (Incidents score higher than Service Requests). Returns a structured `score`, `level` (Low/Medium/High/Critical), and `reasons` array.
+- **Resolution Time Prediction (ETA Badges)**: Each ticket card in the queue now displays an `⏱️ ~Xh (N cases)` badge showing predicted resolution time. The backend `/api/tdx/tickets/predict-resolution` endpoint calculates this by matching the ticket's service category or title keywords against historical averages, returning `avg_hours`, `fastest_hours`, `slowest_hours`, and `sample_size`.
+- **Proactive Duplicate Detection**: When a technician opens a ticket detail view, the system automatically checks for near-duplicate historical tickets using strict AND keyword matching via `/api/history/duplicates`. If matches exceed 40% confidence, a glassmorphic `⚠️ Similar Historical Cases Found` alert card renders showing the historical ticket ID, resolving technician, resolution time, and confidence percentage.
+- **Web Search Integration (DuckDuckGo)**: Replaced the stub `/api/ai/web-search` endpoint (which only returned a Google link) with a real DuckDuckGo Instant Answer API integration. Returns structured results including `summary`, `source`, `source_url`, and up to 5 `related` topics. Falls back gracefully to a Google search link if DuckDuckGo returns no results.
+
+## [4.2.0] - 2026-05-20
+### Added
+- **Historical Ticket RAG Engine (5,477 Cases)**: Rewrote and activated the `search_history()` function to perform intelligent multi-keyword weighted SQL queries against the `tickets_historical` table. Keywords are extracted, stop-words filtered, and matches are scored with a weighted priority system (title match = 3×, service match = 2×, classification match = 1×). Returns the top 3 most relevant historical cases ranked by relevance score and resolution speed.
+- **Core Chat RAG Integration**: The main AI Chat Assistant (`enrich_ai_prompt`) now automatically searches the 5,477-case historical ticket archive on every prompt. Similar past cases — including the responsible technician, department, service category, and SLA status — are injected as real-time background context, enabling the AI to reference proven resolutions and routing patterns.
+- **TDX Ticket Co-Pilot RAG Integration**: The Technician Co-Pilot (`/api/tdx/tickets/{ticket_id}/suggest`) now queries the historical archive using the active ticket's title. Matched historical cases are injected as a `SIMILAR HISTORICAL CASES & RESOLUTIONS` block into the AI prompt, enabling the co-pilot to suggest proven resolutions, identify which team or technician typically handles similar issues, and detect common patterns from past incidents.
+
+### Fixed
+- **Critical: `search_history` Table Name Bug** — Corrected the historical ticket lookup from the non-existent table `historical_tickets` to the actual table `tickets_historical`, which was causing a silent 500 crash and forced the function to be commented out.
+- **Critical: `search_history` Column Name Bug** — Corrected department column access from `m['dept']` (non-existent) to `m['acct_dept']`, preventing `KeyError` crashes when formatting results.
+
+## [4.1.1] - 2026-05-20
+### Fixed
+- **Generic Search Interception & Cache Busting**: Busted the browser cache by updating `app.js` to `v=4.1.1` in `index.html`. Resolved a critical issue where generic search commands (such as clicking `"Find PC by StarID"` or typing generic instructions) bypassed local UI checks, sent raw query strings to the Active Directory endpoint, and triggered failed lookup errors or timeouts. The system now intercepts these queries with the Mustang (`🐴`) mascot and prompts the user to supply the actual target identifier first.
+
+## [4.1.0] - 2026-05-20
+### Changed
+- **AES Cryptographic Key Length Audit**: Conducted an in-depth cryptographic audit of the symmetric credential encryption layer in `security.py`. Updated all system architecture guides, security policies, and UI text descriptions to accurately reflect that the `Fernet` encryption engine uses robust **AES-128-CBC** for encryption at rest (paired with HMAC-SHA256 authentication derived from a 256-bit base64-encoded master key).
+
 ## [4.0.0] - 2026-05-19 (Current)
 ### Added
 - **High-Density Mobile Responsiveness & Viewport Fit**: Hardened the entire application layout to fit strictly within any screen size (height 100vh) without vertical body scroll or horizontal window overflows. Main sidebar collapses into a slide-out hamburger overlay.
@@ -55,7 +89,7 @@ All notable changes to this project will be documented in this file.
 - **Unified Trace API (Everything is Connected)**: The AI now features a "global brain" capable of linking AD, TDX, SCCM, Jamf, ISE, and Mist. Technicians can instantly map users to their primary devices, current IP addresses, and physical network switch/AP locations.
 - **Jamf Cloud Integration**: Added support for Apple Device Management. iPads and MacBooks are now seamlessly routed through the Jamf Cloud API for telemetry and reporting.
 - **Human-In-The-Loop (HITL) WAG Approval**: All destructive remote actions (AD Unlocks, PC Restarts) now enforce a strict WAG Approval PIN modal, ensuring the AI cannot execute high-privilege changes without documented human authorization.
-- **Encrypted Configuration Engine**: Implemented `security.py` to achieve zero-plaintext secrets. All API keys, tokens, and passwords in `config.json` are now AES-256 encrypted and decrypted securely in memory at runtime.
+- **Encrypted Configuration Engine**: Implemented `security.py` to achieve zero-plaintext secrets. All API keys, tokens, and passwords in `config.json` are now AES-128-CBC encrypted (via Fernet) and decrypted securely in memory at runtime.
 - **Hardened Authentication**: Replaced legacy master passwords with strict Active Directory role-validation for all non-emergency access.
 - **Premium Connectivity UI**: Designed new glassmorphic Trace Cards and Unified Profile views to beautifully visualize cross-platform entity links.
 - **Flat-File Migration & Cleanup**: Purged all legacy JSON data stores (`roles.json`, `kb.json`, `directory.json`) in favor of the optimized `trc_ai.db` SQLite engine.

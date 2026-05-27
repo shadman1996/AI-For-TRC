@@ -24,6 +24,8 @@
       </div>
     </div>
     <button id="loginBtn" onclick="performLogin()">Sign In</button>
+    <div class="sso-divider">or</div>
+    <button id="ssoBtn" class="sso-btn" onclick="performSsoLogin()">🐴 One-Click SMSU SSO</button>
     <div id="loginError" class="login-error"></div>
   </div>
 </div>
@@ -556,6 +558,157 @@
           </div>
         </div>
 
+        <!-- SYSTEM DOCTOR DIAGNOSTICS CARD -->
+        <div class="settings-card" id="systemDoctorCard" style="margin-bottom: 30px; background: rgba(30, 41, 59, 0.4); border: 1.5px solid var(--border); border-radius: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span>🏥</span> System Doctor Diagnostics
+              </h2>
+              <p style="margin: 5px 0 0; color: var(--text2); font-size: 13px;">Real-time server logs analysis, connection latency evaluation, and self-repair recommendations.</p>
+            </div>
+            <button class="btn-primary" onclick="runSystemDoctor()" style="background: linear-gradient(135deg, var(--accent), var(--accent2)); font-weight: 700; border-radius: 12px; padding: 10px 20px; border: none; color: white; cursor: pointer; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);">
+              <span>🩺</span> Run Autonomous Scan
+            </button>
+          </div>
+
+          <!-- Doctor Vitals Grid -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 20px;">
+            <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border); padding: 16px; border-radius: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 10px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px;">SYSTEM HEALTH</span>
+              <strong id="docHealthVal" style="font-size: 18px; color: var(--green);">HEALTHY 🟢</strong>
+            </div>
+            <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border); padding: 16px; border-radius: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 10px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px;">DB READ SPEED</span>
+              <strong id="docDbLatencyVal" style="font-size: 18px; color: var(--accent2);">0 ms</strong>
+            </div>
+            <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border); padding: 16px; border-radius: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 10px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px;">LOG SIZE</span>
+              <strong id="docLogSizeVal" style="font-size: 18px; color: #fff;">0 KB</strong>
+            </div>
+            <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border); padding: 16px; border-radius: 12px; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 10px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px;">DATABASE SIZE</span>
+              <strong id="docDbSizeVal" style="font-size: 18px; color: #fff;">0 KB</strong>
+            </div>
+          </div>
+
+          <!-- Doctor Sub-layouts (Logs & Recommendations) -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+            <!-- Parsed Log Panel -->
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <h3 style="font-size: 14px; font-weight: 700; color: #fff; margin: 0; display: flex; align-items: center; gap: 6px;">
+                <span>📋</span> Parsed Error Log Streams
+              </h3>
+              <div id="docLogPanel" style="background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-family: monospace; font-size: 11px; max-height: 250px; overflow-y: auto; color: var(--text2); line-height: 1.5; display: flex; flex-direction: column; gap: 8px;">
+                <div style="color: var(--text-muted); font-style: italic;">No autonomous diagnostic scan run yet. Click 'Run Autonomous Scan'.</div>
+              </div>
+            </div>
+
+            <!-- Recommendations Panel -->
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <h3 style="font-size: 14px; font-weight: 700; color: #fff; margin: 0; display: flex; align-items: center; gap: 6px;">
+                <span>💡</span> System Self-Repair Diagnostics
+              </h3>
+              <div id="docRecsPanel" style="display: flex; flex-direction: column; gap: 10px; max-height: 250px; overflow-y: auto;">
+                <div style="color: var(--text2); font-size: 12.5px; font-style: italic; background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: 10px; padding: 15px; line-height: 1.4;">
+                  No diagnostic data found. Running a scan will evaluate and construct optimization guidelines automatically.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CODE PATCH LAB CARD -->
+        <div class="settings-card" id="patchLabCard" style="margin-bottom: 30px; background: rgba(30, 41, 59, 0.4); border: 1.5px solid var(--border); border-radius: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span>🛠️</span> Code Patch Lab — Human-in-the-Loop Optimizations
+              </h2>
+              <p style="margin: 5px 0 0; color: var(--text2); font-size: 13px;">Deploy real-time AI-suggested code fixes, speed optimizations, and security patches with compile safety verification.</p>
+            </div>
+            <button class="btn-primary" onclick="loadPatches()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); font-weight: 600; border-radius: 12px; padding: 10px 18px; color: var(--text); cursor: pointer; display: flex; align-items: center; gap: 6px;">
+              <span>🔄</span> Refresh Patches
+            </button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px; min-height: 380px;">
+            <!-- Patches List Selector -->
+            <div style="display: flex; flex-direction: column; gap: 12px; border-right: 1px solid var(--border); padding-right: 20px;" id="patchesListContainer">
+              <div style="color: var(--text2); font-style: italic; font-size: 13px;">Initializing Patch Lab...</div>
+            </div>
+
+            <!-- Diff Viewer & Controls -->
+            <div style="display: flex; flex-direction: column; gap: 15px; justify-content: space-between;" id="patchDetailContainer">
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <h3 style="margin:0; font-size:15px; color:#fff;" id="selectedPatchTitle">Select an Optimization Patch</h3>
+                  <span id="selectedPatchStatus" class="status-badge" style="background: rgba(255,255,255,0.1); color: var(--text2);">No Patch Selected</span>
+                </div>
+                <p id="selectedPatchDesc" style="margin:0; font-size:13px; color:var(--text2); line-height:1.5;">Click an optimization on the left panel to review its description, target code, and visual changes.</p>
+                
+                <div id="patchDiffPanel" style="display:none; flex-direction:column; gap:8px;">
+                  <h4 style="margin: 10px 0 4px 0; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text2);">PROPOSED CODE MODIFICATIONS (UNIFIED DIFF)</h4>
+                  <div id="patchDiffContent" class="patch-diff-container"></div>
+                </div>
+              </div>
+
+              <!-- Approve/Revert Buttons -->
+              <div id="patchActionsGroup" style="display:none; gap:12px; margin-top:15px;">
+                <button id="btnApplyPatch" onclick="triggerApplyPatch()" style="flex:1; padding:14px; font-weight:700; border-radius:12px; cursor:pointer; border:none; display:flex; align-items:center; justify-content:center; gap:8px; background:linear-gradient(135deg, #10b981 0%, #059669 100%); color:white; box-shadow:0 4px 12px rgba(16, 185, 129, 0.25);">
+                  <span>⚡</span> Approve & Apply Patch
+                </button>
+                <button id="btnRevertPatch" onclick="triggerRevertPatch()" style="padding:14px; font-weight:700; border-radius:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.3); color:#f87171;">
+                  <span>🔄</span> Revert Fix
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- REMOTE SCRIPT RUNNER CARD -->
+        <div class="settings-card" id="remoteRunnerCard" style="margin-bottom: 30px; background: rgba(30, 41, 59, 0.4); border: 1.5px solid var(--border); border-radius: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span>🐴</span> Remote PowerShell Script Runner
+              </h2>
+              <p style="margin: 5px 0 0; color: var(--text2); font-size: 13px;">Execute standard PowerShell scripts remotely on campus PCs using administrative credentials and secure WAG PIN approvals.</p>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px; min-height: 320px;">
+            <!-- Inputs Panel -->
+            <div style="display: flex; flex-direction: column; gap: 15px; border-right: 1px solid var(--border); padding-right: 20px; justify-content: space-between;">
+              <div style="display: flex; flex-direction: column; gap: 15px;">
+                <div>
+                  <label style="font-size: 12px; font-weight: 600; color: var(--accent2); display: block; margin-bottom: 6px;">Target PC Name</label>
+                  <input type="text" id="runnerPcName" placeholder="e.g. SM164-01" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff;" />
+                </div>
+                <div>
+                  <label style="font-size: 12px; font-weight: 600; color: var(--accent2); display: block; margin-bottom: 6px;">Select Script Pathway</label>
+                  <select id="runnerPredefScripts" onchange="onPredefScriptChange()" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(30, 41, 59, 0.8); color: #fff; margin-bottom: 10px; font-size: 12.5px;">
+                    <option value="custom">-- Custom Script Path --</option>
+                    <option value="\\\\itsfs\\software\\trc\\code\\Office_2024_Mass\\Office2024\\Office2024.ps1">Office 2024 Mass Reinstall (Office2024.ps1)</option>
+                    <option value="\\\\itsfs\\software\\trc\\code\\Office_2024_Mass\\Office2024\\OfficeVersion.ps1">Query Office Version Only (OfficeVersion.ps1)</option>
+                    <option value="\\\\itsfs\\software\\trc\\code\\GPUpdateForce.ps1">GPUpdate /force & Sync</option>
+                  </select>
+                  <input type="text" id="runnerScriptPath" placeholder="e.g. \\\\itsfs\\software\\..." style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff;" />
+                </div>
+              </div>
+              <button id="btnRunScript" onclick="triggerRemoteScript()" style="width: 100%; padding: 14px; font-weight: 700; border-radius: 12px; cursor:pointer; border:none; display:flex; align-items:center; justify-content:center; gap:8px; background:linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color:white; box-shadow:0 4px 12px rgba(59, 130, 246, 0.25);">
+                <span>⚡</span> Run Remote Script
+              </button>
+            </div>
+
+            <!-- Terminal Output Console -->
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <h4 style="margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2);">POWERSHELL REMOTE EXECUTION CONSOLE</h4>
+              <div id="runnerConsole" class="patch-diff-container" style="flex: 1; background: #0f172a; border-radius: 12px; padding: 15px; font-family: monospace; font-size: 12.5px; color: #a7f3d0; border: 1px solid var(--border); overflow-y: auto; white-space: pre-wrap; min-height: 250px;">Waiting for script invocation parameters...</div>
+            </div>
+          </div>
+        </div>
+
         <div class="settings-grid">
           <div class="settings-card" id="deploymentCard">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -685,6 +838,114 @@
                   <!-- Populated dynamically -->
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLA ANALYTICS VIEW -->
+    <section class="view" id="view-analytics">
+      <div class="view-header" style="background: linear-gradient(135deg, #1e293b 0%, #1e1b4b 100%); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+        <div style="display: flex; align-items: center; gap: 20px;">
+          <div style="font-size: 40px; background: rgba(255,255,255,0.15); width: 80px; height: 80px; border-radius: 20px; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(10px);">📈</div>
+          <div>
+            <h1 style="margin: 0;">SLA Analytics & Intelligence</h1>
+            <p style="margin: 5px 0 0;">Institutional service level analysis, real-time technician metrics, and trend intelligence.</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.3); padding: 6px 12px; border-radius: 12px; border: 1px solid var(--border);">
+            <span style="font-size: 12px; color: var(--text2); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Department:</span>
+            <select id="analyticsDeptFilter" onchange="loadAnalyticsData()" style="background: transparent; border: none; color: #fff; font-size: 13px; font-weight: 600; outline: none; cursor: pointer; max-width: 180px;">
+              <option value="" style="background: var(--bg2);">All Departments</option>
+            </select>
+          </div>
+          <button class="btn-refresh" onclick="loadAnalyticsData()" style="padding: 10px 16px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: #fff; border-radius: 12px; font-weight: 600; cursor: pointer;"><span class="refresh-icon">🔄</span> Refresh</button>
+          <button class="btn-handoff" onclick="exportAnalyticsReport()" style="background: var(--green); color: white; border: none; font-weight: 700; padding: 10px 20px; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);"><span class="handoff-icon">📥</span> Export Report</button>
+        </div>
+      </div>
+
+      <div style="flex: 1; overflow-y: auto; padding: 0 32px 32px; display: flex; flex-direction: column; gap: 24px;">
+        <!-- Vitals Metrics Grid -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+          <div class="stat-card-premium" style="background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);">
+            <div class="stat-label">TOTAL VOLUME</div>
+            <div class="stat-value" id="stat-total-tickets">0</div>
+            <div class="stat-sub">Tickets analyzed historically</div>
+            <div class="stat-icon">🎫</div>
+          </div>
+          <div class="stat-card-premium" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+            <div class="stat-label">SLA COMPLIANCE</div>
+            <div class="stat-value" id="stat-sla-pct">0%</div>
+            <div class="stat-sub">SLA target met</div>
+            <div class="stat-icon">✅</div>
+          </div>
+          <div class="stat-card-premium" style="background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);">
+            <div class="stat-label">AVG RESOLUTION SPEED</div>
+            <div class="stat-value" id="stat-avg-res">0h</div>
+            <div class="stat-sub">Hours to resolve tickets</div>
+            <div class="stat-icon">⏱️</div>
+          </div>
+          <div class="stat-card-premium" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+            <div class="stat-label">INCIDENTS PROCESSED</div>
+            <div class="stat-value" id="stat-incidents">0</div>
+            <div class="stat-sub">High priority critical cases</div>
+            <div class="stat-icon">🔥</div>
+          </div>
+        </div>
+
+        <!-- SLA targets details and breakdown sub-row -->
+        <div style="display: flex; gap: 20px; align-items: center; padding: 16px 20px; background: rgba(0,0,0,0.2); border-radius: 12px; border: 1px solid var(--border); font-size: 13.5px; justify-content: space-around;">
+          <div>✅ <span style="color: var(--text2);">SLA Met:</span> <strong id="stat-sla-met" style="color: var(--green); font-size: 16px; margin-left: 4px;">0</strong></div>
+          <div style="width: 1px; height: 16px; background: var(--border);"></div>
+          <div>🚨 <span style="color: var(--text2);">SLA Breached:</span> <strong id="stat-sla-breached" style="color: var(--red); font-size: 16px; margin-left: 4px;">0</strong></div>
+        </div>
+
+        <!-- Charts Grid Row 1 -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 24px;">
+          <div class="settings-card" style="margin: 0; min-height: 340px; display: flex; flex-direction: column;">
+            <h3>📈 SLA Resolution Trends</h3>
+            <p style="margin-bottom: 15px; color: var(--text2); font-size: 12px; line-height: 1.4;">Monthly ticket volumes with active target compliance levels.</p>
+            <div id="trendChartContainer" style="flex: 1; min-height: 250px; display: flex; align-items: center; justify-content: center; position: relative;">
+              <!-- SVG generated dynamically -->
+            </div>
+          </div>
+          <div class="settings-card" style="margin: 0; min-height: 340px; display: flex; flex-direction: column;">
+            <h3>📊 Service Categories Breakdown</h3>
+            <p style="margin-bottom: 15px; color: var(--text2); font-size: 12px; line-height: 1.4;">Top 10 services resolved by volume and average resolution speed.</p>
+            <div id="categoriesChartContainer" style="flex: 1; overflow-y: auto; display: flex; align-items: flex-start; justify-content: center; padding: 4px 0;">
+              <!-- HTML bars generated dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Leaderboard & Alerts Grid Row 2 -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 24px;">
+          <div class="settings-card" style="margin: 0; min-height: 380px; display: flex; flex-direction: column;">
+            <h3>🏆 Technician SLA Leaderboard</h3>
+            <p style="margin-bottom: 15px; color: var(--text2); font-size: 12px; line-height: 1.4;">Performance rank and target metrics of active support staff.</p>
+            <div style="flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; background: rgba(0,0,0,0.15);">
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead style="position: sticky; top: 0; background: var(--bg2); z-index: 10; border-bottom: 1.5px solid var(--border);">
+                  <tr>
+                    <th style="padding: 10px 8px; text-align: left; color: var(--text2);">Technician</th>
+                    <th style="padding: 10px 8px; text-align: center; color: var(--text2); width: 80px;">Resolved</th>
+                    <th style="padding: 10px 8px; text-align: center; color: var(--text2); width: 80px;">SLA Rate</th>
+                    <th style="padding: 10px 8px; text-align: right; color: var(--text2); padding-right: 15px;">SLA Met/Breached</th>
+                  </tr>
+                </thead>
+                <tbody id="techLeaderboardBody">
+                  <!-- Populated by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="settings-card" style="margin: 0; min-height: 380px; display: flex; flex-direction: column;">
+            <h3>🚨 Active SLA Anomaly Alerts</h3>
+            <p style="margin-bottom: 15px; color: var(--text2); font-size: 12px; line-height: 1.4;">Automated keyword analysis triggers alarms when support spikes threaten SLAs.</p>
+            <div id="anomalyList" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
+              <!-- Populated by JS -->
             </div>
           </div>
         </div>
@@ -984,6 +1245,6 @@
 </div>
 
 <script src="data.js?v=3.6.0"></script>
-<script src="app.js?v=4.1.0"></script>
+<script src="app.js?v=4.1.1"></script>
 </body>
 </html>

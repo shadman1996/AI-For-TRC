@@ -23,7 +23,7 @@ The system follows a **Modular Client-Server Architecture**:
    [ TRC AI Assistant — Port 8001 ]
        FastAPI (Python) Backend
        SecurityGuard Middleware
-       AES-256 Encrypted Config
+       AES-128 Encrypted Config
        Role-Based Access Control
               |
    ┌──────────┼──────────────────────┐
@@ -37,7 +37,7 @@ The system follows a **Modular Client-Server Architecture**:
 - **Frontend**: Vanilla JS + CSS — mobile-first, no external dependencies
 - **Database**: SQLite (`trc_ai.db`) for sessions, users, and KB storage
 - **AI Engine**: Ollama `phi3:mini` — **fully local, no data leaves campus**
-- **Security Layer**: `SecurityGuard` middleware + Fernet AES-256 encryption for all credentials
+- **Security Layer**: `SecurityGuard` middleware + Fernet AES-128-CBC encryption for all credentials
 
 ---
 
@@ -70,7 +70,7 @@ All TDX comments posted via the AI are signed: `— Posted by [username] via TRC
 
 ## 🛠️ Management
 - **Admin Panel**: Accessible via ⚙️ for SysAdmins. Manage user roles, permissions, and view audit logs.
-- **Configuration**: `config.json` — all sensitive values stored as `ENC(...)` AES-256 encrypted strings.
+- **Configuration**: `config.json` — all sensitive values stored as `ENC(...)` AES-128 encrypted strings.
 - **Audit Logs**: All staff actions (ticket posts, SCCM triggers, AD changes) are logged to `trc_ai.db`.
 - **HITL Governance**: Destructive actions (AD resets, SCCM reboots, TDX posts) require explicit human confirmation. The AI cannot act autonomously.
 

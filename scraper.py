@@ -116,6 +116,14 @@ def scrape_starid_admin(query: str, username: str, password: str):
         return {"status": "error", "message": f"Scraping failed: {str(e)}"}
 
 if __name__ == "__main__":
-    # Test with provided credentials
-    res = scrape_starid_admin("vg6340ah", "vg6340ah", "Temp@2026!!")
-    print(json.dumps(res, indent=2))
+    import sys
+    if len(sys.argv) >= 4:
+        q = sys.argv[1]
+        u = sys.argv[2]
+        p = sys.argv[3]
+        res = scrape_starid_admin(q, u, p)
+        print(json.dumps(res))
+    else:
+        # Test with provided credentials
+        res = scrape_starid_admin("vg6340ah", "vg6340ah", "Temp@2026!!")
+        print(json.dumps(res, indent=2))

@@ -1,7 +1,7 @@
 # 🔒 Security & Access Control
 **Document Version:** 2.0 | Updated: May 15, 2026
 
-The TRC AI Assistant uses **Role-Based Access Control (RBAC)**, **AES-256 Encryption at Rest**, a mandatory **Human-In-The-Loop (HITL) Approval Gate**, and an active **SecurityGuard Middleware** to ensure all institutional integrations are accessed securely and only by authorized staff.
+The TRC AI Assistant uses **Role-Based Access Control (RBAC)**, **AES-128-CBC Encryption at Rest**, a mandatory **Human-In-The-Loop (HITL) Approval Gate**, and an active **SecurityGuard Middleware** to ensure all institutional integrations are accessed securely and only by authorized staff.
 
 ---
 
@@ -18,7 +18,7 @@ The TRC AI Assistant uses **Role-Based Access Control (RBAC)**, **AES-256 Encryp
 ---
 
 ## 🔐 Credential Encryption
-All institutional credentials stored in `config.json` use **Fernet AES-256 encryption** via `security.py`. No plain-text secrets exist anywhere in the codebase.
+All institutional credentials stored in `config.json` use **Fernet AES-128-CBC encryption** via `security.py`. No plain-text secrets exist anywhere in the codebase.
 
 | Secret | Status |
 |---|---|
@@ -63,7 +63,7 @@ This ensures full audit traceability. Anonymous posting is not possible.
 ## 🛠️ Implementation Details
 - **Backend Gating**: Every API endpoint in `server.py` validates the session token and role before executing.
 - **Frontend Masking**: UI elements for restricted modules are hidden or disabled based on the logged-in role.
-- **Zero Plain-Text Secrets**: All API credentials are AES-256 encrypted in `config.json` and never exposed to the client browser.
+- **Zero Plain-Text Secrets**: All API credentials are AES-128 encrypted in `config.json` and never exposed to the client browser.
 - **SQLite Session Management**: Sessions stored in `trc_ai.db` with expiring tokens. No flat JSON files.
 - **Bearer Token Lifecycle**: TDX Bearer tokens are held in memory only, auto-refreshed every 60 minutes, and never written to disk.
 

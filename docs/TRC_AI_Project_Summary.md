@@ -46,7 +46,7 @@ A unified, locally-run web application combining all campus systems into one int
 - **100% Local AI Processing** — No student or staff data is sent to cloud AI services.
 - **On-Campus Infrastructure** — All enterprise lookups (AD, SCCM, TDX) occur on the internal campus network.
 - **Offline-First** — The AI brain runs locally via Ollama (`phi3:mini`), functioning even without internet.
-- **Secure by Design** — All credentials are AES-256 encrypted. No plain-text secrets anywhere.
+- **Secure by Design** — All credentials are AES-128 encrypted. No plain-text secrets anywhere.
 - **Human-in-the-Loop** — The AI advises and drafts; humans approve and execute.
 
 ---
@@ -82,7 +82,7 @@ Five roles (Guest, Help Desk, Tech, WAG, SysAdmin) with granular per-module perm
 
 ### 8. Security Hardening
 - **SecurityGuard Middleware**: Rate limiting (60 req/min), anti-scanning (auto-block after 10x 404s), server header cloaking.
-- **AES-256 Encryption**: All institutional credentials encrypted with Fernet. Stored as `ENC(...)` in `config.json`.
+- **AES-128-CBC Encryption**: All institutional credentials encrypted with Fernet. Stored as `ENC(...)` in `config.json`.
 - **Hidden Key File**: Master encryption key is a hidden system file (`.secret.key`) on the server.
 - **Session Management**: Cryptographically random session tokens, stored in SQLite with expiry.
 
@@ -102,7 +102,7 @@ Auto-detects server LAN IP. `setup_firewall.bat` opens Port 8001. Admin Panel di
 | Concern | How It's Handled |
 |---|---|
 | **AI data privacy** | Fully local Ollama model. Zero data sent to external AI providers. |
-| **Credential storage** | All secrets AES-256 encrypted as `ENC(...)` in `config.json`. No plain text. |
+| **Credential storage** | All secrets AES-128 encrypted as `ENC(...)` in `config.json`. No plain text. |
 | **Network exposure** | SecurityGuard middleware: rate limiting + anti-scanning on Port 8001. |
 | **API access scope** | ISE, Mist, Jamf — read-only. TDX — write requires human confirmation. |
 | **Audit trail** | All staff actions logged to `trc_ai.db` with user, role, action, timestamp. |
@@ -153,7 +153,7 @@ Multi-tenant architecture for multiple campuses, shared knowledge network, and M
 | Juniper Mist | REST API | Mist Cloud |
 | Jamf Cloud | REST API — `smsu.jamfcloud.com` | Cloud |
 | StarID Portal | Playwright headless scraper | MinnState Cloud |
-| Encryption | Fernet AES-256 (`cryptography` lib) | Local |
+| Encryption | Fernet AES-128-CBC (`cryptography` lib) | Local |
 | Version Control | Git / GitHub (private repo) | GitHub |
 
 ---

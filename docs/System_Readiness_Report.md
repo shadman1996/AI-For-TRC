@@ -5,7 +5,7 @@
 **Connectivity:** LIVE (TeamDynamix, SCCM, AD, ISE)
 
 ## 1. Security & Hardening
-- **End-to-End Encryption**: All institutional secrets (TDX, ISE, StarID Admin) are encrypted using AES-256 `SecurityManager` wrappers.
+- **End-to-End Encryption**: All institutional secrets (TDX, ISE, StarID Admin) are encrypted using AES-128-CBC `SecurityManager` wrappers.
 - **Middleware Protection**: `SecurityGuard` middleware is active on Port 8001, providing IP-based rate limiting (60 req/min) and automated blocking for network scanning behavior.
 - **Server Cloaking**: FastAPI headers have been hardened to prevent OS fingerprinting.
 

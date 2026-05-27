@@ -1,7 +1,7 @@
 # 🧩 System Modules
 **Document Version:** 2.0 | Updated: May 15, 2026
 
-The TRC AI Assistant is built as a modular platform. Each module handles a specific enterprise integration or feature set. All credentials for external platforms are stored **AES-256 encrypted** in `config.json` and decrypted in memory at runtime only.
+The TRC AI Assistant is built as a modular platform. Each module handles a specific enterprise integration or feature set. All credentials for external platforms are stored **AES-128 encrypted** in `config.json` and decrypted in memory at runtime only.
 
 ---
 
@@ -39,7 +39,7 @@ The TRC AI Assistant is built as a modular platform. Each module handles a speci
 
 ## 4. 🍎 Jamf Cloud Module
 - **Purpose**: Apple device management (iPads, MacBooks, iPhones).
-- **Integration**: Jamf Cloud API (`smsu.jamfcloud.com`) via AES-256 encrypted Bearer token.
+- **Integration**: Jamf Cloud API (`smsu.jamfcloud.com`) via AES-128 encrypted Bearer token.
 - **Auto-Routing**: The Unified Trace Engine automatically routes Apple device queries to Jamf instead of SCCM.
 - **Data Points**: Device name, serial number, OS version, last check-in, assigned user.
 - **Scope**: Read-only. No device configuration changes via the AI.
@@ -67,7 +67,7 @@ The TRC AI Assistant is built as a modular platform. Each module handles a speci
 
 ## 7. 📡 Juniper Mist WiFi Module
 - **Purpose**: Campus wireless diagnostics.
-- **Integration**: Mist Cloud REST API with AES-256 encrypted API token.
+- **Integration**: Mist Cloud REST API with AES-128 encrypted API token.
 - **Data Points**: Client RSSI, AP association, roaming history, OS type, authentication status.
 - **Auto-Fallback**: If a MAC isn't found in SCCM, the Unified Trace Engine automatically tries Mist.
 - **Scope**: Read-only. No AP configuration changes via the AI.
@@ -77,7 +77,7 @@ The TRC AI Assistant is built as a modular platform. Each module handles a speci
 
 ## 8. 🛡️ Cisco ISE Module
 - **Purpose**: Network endpoint security lookups — device posture and VLAN assignment.
-- **Integration**: Cisco ISE ERS REST API at `https://ise.smsu.edu` with AES-256 encrypted credentials.
+- **Integration**: Cisco ISE ERS REST API at `https://ise.smsu.edu` with AES-128 encrypted credentials.
 - **Data Points**: Endpoint authentication status, VLAN assignment, MAC-based posture.
 - **Scope**: Read-only. No VLAN changes or endpoint modifications via the AI.
 - **Roles**: `tech`, `wag`, `sysadmin`.

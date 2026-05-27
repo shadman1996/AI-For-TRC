@@ -45,7 +45,7 @@ All integrations are **read-first, role-gated, and encrypted at rest**. No platf
 [ TRC AI Assistant — Port 8001 ]
     - FastAPI Backend (Python)
     - SecurityGuard Middleware (Rate Limiting / Anti-Scan)
-    - AES-256 Encrypted Config (config.json)
+    - AES-128 Encrypted Config (config.json)
     - Role-Based Access Control (RBAC)
             |
     ┌───────┼──────────────────────┐
@@ -59,7 +59,7 @@ All integrations are **read-first, role-gated, and encrypted at rest**. No platf
 - **Backend**: Python 3.12, FastAPI, Uvicorn
 - **Database**: SQLite (local, encrypted session data)
 - **AI Engine**: Ollama (local model — `phi3:mini`), fully offline
-- **Encryption**: Fernet AES-256 (Python `cryptography` library)
+- **Encryption**: Fernet AES-128-CBC (Python `cryptography` library)
 
 ---
 
@@ -117,7 +117,7 @@ All integrations are **read-first, role-gated, and encrypted at rest**. No platf
 **Credential Handling:**
 - The AI system does **not** store SCCM admin credentials. It relies on the **currently logged-in Windows session** of the TRC workstation for WMI access, consistent with how the existing `CheckoutTDXDevice.ps1` and `PullCurrentTDXInfo.ps1` scripts operate.
 - The `TDX_API_Key` SCCM Collection Variable (used to decrypt the TDX iPaaS key) is accessed only through the SCCM client policy on managed machines. It is **never exposed in logs or stored on disk** by the AI.
-- Decryption of institutional API keys follows the same AES-256 pattern defined in `PullCurrentTDXInfo.ps1` — the SCCM machine variable acts as the master passphrase.
+- Decryption of institutional API keys follows the same AES-128-CBC pattern defined in `PullCurrentTDXInfo.ps1` — the SCCM machine variable acts as the master passphrase.
 
 **Safety Controls:**
 - All destructive SCCM operations (e.g., remote commands) require `sysadmin` or `wag` role.
@@ -136,7 +136,7 @@ All integrations are **read-first, role-gated, and encrypted at rest**. No platf
   - **Data Extracted:** Full name, title, department, affiliations, StarID status.
 
 **Security Controls:**
-- StarID Admin credentials are stored as `ENC(gAAAAA...)` — Fernet AES-256 encrypted.
+- StarID Admin credentials are stored as `ENC(gAAAAA...)` — Fernet AES-128-CBC encrypted.
 - The `.secret.key` master encryption key file is marked as a **hidden system file** on Windows (via `FILE_ATTRIBUTE_HIDDEN`).
 - The scraper is invoked **on demand** only (when staff explicitly search for a user). It does not run in the background or cache personally identifiable information.
 
@@ -155,7 +155,7 @@ All integrations are **read-first, role-gated, and encrypted at rest**. No platf
 - **API Calls:** ISE REST API (ERS) for endpoint group membership and authentication session data.
 
 **Security Controls:**
-- ISE credentials encrypted at rest with Fernet AES-256.
+- ISE credentials encrypted at rest with Fernet AES-128-CBC.
 - All ISE lookups are **read-only**. No posture changes, no VLAN modifications, and no endpoint deletion can be performed through the AI.
 - Only `tech`, `wag`, and `sysadmin` roles have access to the ISE module.
 
@@ -217,11 +217,11 @@ All integrations are **read-first, role-gated, and encrypted at rest**. No platf
 ### Encryption at Rest
 | Secret | Storage Location | Encryption Method |
 |---|---|---|
-| TDX BEID | `config.json` | Fernet AES-256 `ENC(...)` |
-| TDX WSKey | `config.json` | Fernet AES-256 `ENC(...)` |
-| TDX iPaaS Secret | `config.json` | Fernet AES-256 `ENC(...)` |
-| StarID Admin Password | `config.json` | Fernet AES-256 `ENC(...)` |
-| Cisco ISE Password | `config.json` | Fernet AES-256 `ENC(...)` |
+| TDX BEID | `config.json` | Fernet AES-128-CBC `ENC(...)` |
+| TDX WSKey | `config.json` | Fernet AES-128-CBC `ENC(...)` |
+| TDX iPaaS Secret | `config.json` | Fernet AES-128-CBC `ENC(...)` |
+| StarID Admin Password | `config.json` | Fernet AES-128-CBC `ENC(...)` |
+| Cisco ISE Password | `config.json` | Fernet AES-128-CBC `ENC(...)` |
 | Fernet Master Key | `.secret.key` | Hidden system file on disk |
 
 ### Encryption in Transit
@@ -275,7 +275,7 @@ The `SecurityGuard` class (implemented in `server.py`) protects Port 8001 on the
 |---|---|
 | **Acceptable Use** | System is restricted to TRC staff for IT operations. Guest access is limited to non-sensitive modules (chat, directory, wayfinding). |
 | **Data Classification** | No Restricted or Confidential data is stored locally. Operational data (tickets, devices) is held in-memory during the session only. |
-| **Password & Credential Management** | All credentials are encrypted using AES-256 Fernet. Plain-text passwords do not exist in any configuration file. |
+| **Password & Credential Management** | All credentials are encrypted using Fernet AES-128-CBC. Plain-text passwords do not exist in any configuration file. |
 | **Access Control** | RBAC enforced at every API endpoint. Role is verified on every request via session token. Unauthorized access returns HTTP 403. |
 | **Audit & Accountability** | All administrative actions (ticket creation, SCCM triggers, TDX comments) are logged to the local audit database with username, role, action, and timestamp. |
 | **Network Security** | The system runs on the campus LAN only. Rate limiting and anti-scanning protection are active. No external ports are opened beyond Port 8001 (campus-internal). |
