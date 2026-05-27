@@ -114,6 +114,23 @@ def init_db():
     )
     """)
 
+    # 6.5 Threat Intel & Security Alerts Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS security_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ip TEXT,
+        username TEXT,
+        threat_level TEXT,
+        description TEXT,
+        action_taken TEXT,
+        status TEXT DEFAULT 'Active'
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_ip ON security_alerts(ip)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_alerts_status ON security_alerts(status)")
+
+
     # 7. Historical Tickets Table for SLA Analytics
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS tickets_historical (
@@ -605,6 +622,34 @@ def get_audit_logs(limit=100):
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+def add_security_alert(ip, username, threat_level, description, action_taken):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO security_alerts (ip, username, threat_level, description, action_taken)
+        VALUES (?, ?, ?, ?, ?)
+    """, (ip, username, threat_level, description, action_taken))
+    conn.commit()
+    conn.close()
+
+def get_security_alerts(limit=100):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM security_alerts ORDER BY timestamp DESC LIMIT ?", (limit,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def resolve_security_alert(alert_id, resolution="Resolved"):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE security_alerts SET status = ? WHERE id = ?
+    """, (resolution, alert_id))
+    conn.commit()
+    conn.close()
+
 
 if __name__ == "__main__":
     migrate_data()

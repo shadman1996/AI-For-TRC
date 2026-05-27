@@ -63,6 +63,54 @@ class SecurityGuard:
 
 guard = SecurityGuard()
 
+import datetime
+class IntrusionDetectionAgent:
+    def __init__(self):
+        self.failed_logins = defaultdict(list)
+        self.failed_pins = defaultdict(list)
+        
+    def track_failed_login(self, ip: str, username: str):
+        now = time.time()
+        self.failed_logins[ip] = [t for t in self.failed_logins[ip] if t > now - 300]
+        self.failed_logins[ip].append(now)
+        count = len(self.failed_logins[ip])
+        if count >= 5:
+            description = f"Brute-force login attempts: {count} failed validations in under 5 minutes for user '{username}'."
+            guard.blocked_ips[ip] = now + 86400 # 24 hours quarantine
+            database.add_security_alert(ip, username, "CRITICAL", description, "IP Quarantined (24h)")
+            logging.error(f"🚨 INTRUSION SHIELD: Quarantining IP {ip} for brute-force login attempts.")
+            return True
+        return False
+        
+    def track_failed_pin(self, ip: str, username: str):
+        now = time.time()
+        self.failed_pins[username] = [t for t in self.failed_pins[username] if t > now - 300]
+        self.failed_pins[username].append(now)
+        count = len(self.failed_pins[username])
+        if count >= 3:
+            description = f"Privilege escalation attempt: {count} consecutive WAG Approval PIN failures."
+            guard.blocked_ips[ip] = now + 14400 # 4 hours block
+            sessions_to_kill = [t for t, s in SESSIONS.items() if s.get("username") == username]
+            for t in sessions_to_kill:
+                if t in SESSIONS: del SESSIONS[t]
+            database.add_security_alert(ip, username, "HIGH", description, "Session Terminated & IP Blocked")
+            logging.error(f"🚨 INTRUSION SHIELD: Terminating session for '{username}' due to PIN failures.")
+            return True
+        return False
+
+    def check_out_of_hours(self, ip: str, username: str, action: str, target: str):
+        local_time = datetime.datetime.now()
+        hour = local_time.hour
+        if hour >= 22 or hour < 6:
+            description = f"Out-of-hours administrative activity: Operator '{username}' executed '{action}' on '{target}'."
+            database.add_security_alert(ip, username, "MEDIUM", description, "Logged & Flagged for Review")
+            logging.warning(f"🚨 SECURITY AUDIT: Out-of-hours action detected from '{username}' at {local_time.strftime('%H:%M')}.")
+            return True
+        return False
+
+threat_agent = IntrusionDetectionAgent()
+
+
 # Initialize Database
 database.init_db()
 
@@ -279,7 +327,7 @@ class LoginPayload(BaseModel):
 # Persistent roles logic is now in database.py
 
 @app.post("/api/auth/login")
-def login(payload: LoginPayload):
+def login(payload: LoginPayload, request: Request):
     u = payload.username.lower().strip()
     p = payload.password.strip()
     
@@ -365,10 +413,13 @@ def login(payload: LoginPayload):
                  SESSIONS[token] = {"token": token, "username": u, "role": "sysadmin", "modules": CONFIG.get("default_module_permissions", {}).get("sysadmin", [])}
                  ACTIVE_PASSWORDS[token] = p
                  return {"status": "success", "token": token, "role": "sysadmin", "username": u}
+            threat_agent.track_failed_login(request.client.host, u)
             return {"status": "error", "message": "Network or Active Directory is unreachable. Contact WAG for emergency access."}
         else:
+            threat_agent.track_failed_login(request.client.host, u)
             return {"status": "error", "message": "Invalid StarID or Password"}
     except Exception as e:
+        threat_agent.track_failed_login(request.client.host, u)
         return {"status": "error", "message": "An unexpected error occurred during login."}
 
 @app.get("/api/auth/sso")
@@ -520,13 +571,14 @@ class PinPayload(BaseModel):
     pin: str
 
 @app.post("/api/auth/verify_pin")
-def verify_pin(payload: PinPayload):
+def verify_pin(payload: PinPayload, request: Request, user=Depends(get_session_user)):
     """
     Verify the 4-digit WAG Approval PIN for administrative actions.
     """
     expected_pin = CONFIG.get("wag_pin", "2026")
     if payload.pin == expected_pin:
         return {"status": "success", "message": "PIN verified successfully."}
+    threat_agent.track_failed_pin(request.client.host, user["username"])
     return {"status": "error", "message": "Invalid PIN."}
 
 class RemoteScriptPayload(BaseModel):
@@ -534,7 +586,7 @@ class RemoteScriptPayload(BaseModel):
     script_path: str
 
 @app.post("/api/admin/remote-script")
-def run_remote_script(payload: RemoteScriptPayload, user=Depends(get_session_user)):
+def run_remote_script(payload: RemoteScriptPayload, request: Request, user=Depends(get_session_user)):
     """
     Executes a PowerShell script remotely on a campus PC via WinRM.
     Restricted to System Administrators (sysadmin role).
@@ -543,6 +595,8 @@ def run_remote_script(payload: RemoteScriptPayload, user=Depends(get_session_use
         raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
         
     pc = payload.pc_name.strip().upper()
+    threat_agent.check_out_of_hours(request.client.host, user["username"], "Remote Script Execution", f"PC: {pc} | Script: {payload.script_path}")
+
     script = payload.script_path.strip()
     
     if not pc or not script:
@@ -899,6 +953,69 @@ def get_admin_audit_logs(user=Depends(get_session_user)):
     for log in logs:
         log['user'] = log.get('operator')
     return {"status": "success", "data": logs}
+
+class ResolveAlertPayload(BaseModel):
+    alert_id: int
+    resolution: str
+
+class QuarantinePayload(BaseModel):
+    ip: str
+    action: str # "quarantine" or "release"
+
+@app.get("/api/admin/security/alerts")
+def get_security_threat_alerts(user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access restricted.")
+    
+    alerts = database.get_security_alerts(limit=50)
+    blocked_ips_list = []
+    now = time.time()
+    for ip, block_time in list(guard.blocked_ips.items()):
+        if block_time > now:
+            blocked_ips_list.append({
+                "ip": ip,
+                "expires_in_secs": int(block_time - now),
+                "expires_at": datetime.datetime.fromtimestamp(block_time).strftime("%Y-%m-%d %H:%M:%S")
+            })
+        else:
+            del guard.blocked_ips[ip]
+            
+    return {
+        "status": "success",
+        "alerts": alerts,
+        "quarantined_ips": blocked_ips_list,
+        "vitals": {
+            "threats_count": sum(1 for a in alerts if a["status"] == "Active"),
+            "blocked_count": len(blocked_ips_list)
+        }
+    }
+
+@app.post("/api/admin/security/resolve")
+def resolve_threat_alert(payload: ResolveAlertPayload, user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access restricted.")
+    
+    database.resolve_security_alert(payload.alert_id, payload.resolution)
+    database.add_audit_log(user["username"], "Threat Intel", "Resolve Alert", f"Alert ID: {payload.alert_id} marked as {payload.resolution}")
+    return {"status": "success", "message": f"Alert {payload.alert_id} updated successfully."}
+
+@app.post("/api/admin/security/quarantine")
+def toggle_quarantine(payload: QuarantinePayload, user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access restricted.")
+    
+    ip = payload.ip.strip()
+    if payload.action == "quarantine":
+        guard.blocked_ips[ip] = time.time() + 86400
+        database.add_security_alert(ip, "Manual", "HIGH", "Manual administrator quarantine initiated.", "IP Quarantined (24h)")
+        database.add_audit_log(user["username"], "Threat Intel", "Manual IP Block", f"IP: {ip} quarantined.")
+        return {"status": "success", "message": f"IP {ip} successfully quarantined."}
+    else:
+        if ip in guard.blocked_ips:
+            del guard.blocked_ips[ip]
+        database.add_audit_log(user["username"], "Threat Intel", "Release IP Block", f"IP: {ip} released from quarantine.")
+        return {"status": "success", "message": f"IP {ip} successfully released from quarantine."}
+
 
 @app.post("/api/admin/ad/unlock")
 def unlock_ad_account(payload: StarIDActionPayload, user=Depends(get_session_user)):

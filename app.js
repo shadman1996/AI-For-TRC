@@ -4632,6 +4632,8 @@ async function loadSysAdminGlimpse() {
     runSystemDoctor();
     // Automatically load proposed optimization patches on tab open!
     loadPatches();
+    // Automatically load Security Threat Intelligence Feed on tab open!
+    loadSecurityThreats();
   } catch (e) {
     console.error("Failed to load SysAdmin Glimpse", e);
   }
@@ -4679,6 +4681,124 @@ async function syncSmsuKb() {
     btn.style.opacity = '1';
   }
 }
+
+async function loadSecurityThreats() {
+  if (!currentUser) return;
+  
+  const activeCountEl = document.getElementById('activeThreatsCount');
+  const quarantinedCountEl = document.getElementById('quarantinedIpsCount');
+  const feedContainer = document.getElementById('threatFeedContainer');
+  const listContainer = document.getElementById('quarantineListContainer');
+  
+  if (!feedContainer || !listContainer) return;
+  
+  try {
+    const res = await fetch(`/api/admin/security/alerts?token=${currentUser.token}`);
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      // 1. Update Metrics
+      if (activeCountEl) activeCountEl.innerText = data.vitals.threats_count;
+      if (quarantinedCountEl) quarantinedCountEl.innerText = data.vitals.blocked_count;
+      
+      // 2. Render Anomaly alerts
+      if (data.alerts.length === 0) {
+        feedContainer.innerHTML = '<div style="color: var(--text-muted); font-style: italic; text-align: center; padding: 40px 0;">No active threats detected. Network is clean.</div>';
+      } else {
+        feedContainer.innerHTML = data.alerts.map(alert => {
+          const badgeClass = `badge-${alert.threat_level.toLowerCase()}`;
+          const isResolved = alert.status !== 'Active';
+          const resolveButton = isResolved ? 
+            `<span style="color: var(--green); font-size:11px; font-weight:700;">🟢 Resolved</span>` : 
+            `<button class="btn-primary" onclick="resolveThreatAlert(${alert.id})" style="font-size:11px; padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.08); border: 1px solid var(--border); color: white; font-weight:bold; cursor:pointer;">Resolve</button>`;
+          
+          return `
+            <div class="threat-alert-item" style="${isResolved ? 'opacity: 0.6;' : ''}">
+              <div class="threat-meta">
+                <div class="threat-header">
+                  <span class="threat-badge ${badgeClass}">${alert.threat_level}</span>
+                  <span class="threat-time">${alert.timestamp.split('.')[0]}</span>
+                </div>
+                <div class="threat-desc"><strong>[${alert.ip || 'LAN'}]</strong> ${alert.description}</div>
+                <div class="threat-desc" style="color: var(--accent); font-family: monospace; font-size: 11px; margin-top: 4px;">🛡️ Mitigation: ${alert.action_taken}</div>
+              </div>
+              <div style="display:flex; align-items:center;">
+                ${resolveButton}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+      
+      // 3. Render Quarantined IPs
+      if (data.quarantined_ips.length === 0) {
+        listContainer.innerHTML = '<div style="color: var(--text-muted); font-style: italic; text-align: center; padding: 40px 0;">No IPs quarantined. All clients authorized.</div>';
+      } else {
+        listContainer.innerHTML = data.quarantined_ips.map(q => {
+          const hoursLeft = Math.ceil(q.expires_in_secs / 3600);
+          return `
+            <div class="quarantine-item">
+              <div class="quarantine-meta">
+                <span class="quarantine-ip">${q.ip}</span>
+                <span class="quarantine-expires">Expires in ~${hoursLeft}h (${q.expires_at.split(' ')[1]})</span>
+              </div>
+              <button class="btn-primary" onclick="toggleIpQuarantine('${q.ip}', 'release')" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; font-size: 11px; padding: 4px 8px; border-radius: 6px; font-weight:bold; cursor:pointer;">Release</button>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load security threats", e);
+  }
+}
+
+async function resolveThreatAlert(alertId) {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`/api/admin/security/resolve?token=${currentUser.token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alert_id: alertId, resolution: "Resolved" })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast("Threat alert resolved successfully.", "success");
+      loadSecurityThreats();
+    }
+  } catch (e) { showToast("Failed to resolve alert.", "error"); }
+}
+
+async function toggleIpQuarantine(ip, action) {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`/api/admin/security/quarantine?token=${currentUser.token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: ip, action: action })
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+      showToast(action === 'quarantine' ? `IP ${ip} quarantined.` : `IP ${ip} released from quarantine.`, "success");
+      loadSecurityThreats();
+    } else {
+      showToast(`Error: ${data.message}`, "error");
+    }
+  } catch (e) { showToast("Failed to change quarantine state.", "error"); }
+}
+
+function triggerManualQuarantine() {
+  const ipInput = document.getElementById('manualQuarantineIp');
+  if (!ipInput) return;
+  const ip = ipInput.value.trim();
+  if (!ip) {
+    showToast("Please enter a valid IP address", "error");
+    return;
+  }
+  toggleIpQuarantine(ip, 'quarantine');
+  ipInput.value = '';
+}
+
 
 
 let patchLabData = [];

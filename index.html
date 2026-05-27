@@ -561,6 +561,74 @@
           </div>
         </div>
 
+        <!-- AUTONOMOUS THREAT INTELLIGENCE & SHIELD -->
+        <div class="settings-card" id="threatIntelligenceCard" style="margin-bottom: 30px; background: rgba(15, 23, 42, 0.4); border: 1.5px solid var(--border); border-radius: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+            <div>
+              <h2 style="margin: 0; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span>🛡️</span> Threat Intelligence & Intrusion Defense
+              </h2>
+              <p style="margin: 5px 0 0; color: var(--text2); font-size: 13px;">Real-time LAN telemetry analysis, heuristic brute-force monitors, and autonomous security quarantine controls.</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div class="radar-pulse-container">
+                <span class="radar-ping"></span>
+                <span class="radar-badge">🔒 AGENT ACTIVE</span>
+              </div>
+              <button class="btn-primary" onclick="loadSecurityThreats()" style="background: rgba(30, 41, 59, 0.6); font-weight: 700; border-radius: 12px; padding: 10px 20px; border: 1px solid var(--border);">🔄 Refresh Intel</button>
+            </div>
+          </div>
+
+          <!-- Security Telemetry Widgets -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px;">
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 16px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+              <div>
+                <span style="font-size: 10px; font-weight: 700; color: rgba(239, 68, 68, 0.8); text-transform: uppercase; letter-spacing: 0.5px;">ACTIVE ANOMALIES</span>
+                <div id="activeThreatsCount" style="font-size: 24px; font-weight: 800; color: #ef4444; margin-top: 4px;">0</div>
+              </div>
+              <span style="font-size: 28px;">🚨</span>
+            </div>
+            <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); padding: 16px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+              <div>
+                <span style="font-size: 10px; font-weight: 700; color: rgba(245, 158, 11, 0.8); text-transform: uppercase; letter-spacing: 0.5px;">QUARANTINED LAN IPS</span>
+                <div id="quarantinedIpsCount" style="font-size: 24px; font-weight: 800; color: #f59e0b; margin-top: 4px;">0</div>
+              </div>
+              <span style="font-size: 28px;">🛑</span>
+            </div>
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 16px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between;">
+              <div>
+                <span style="font-size: 10px; font-weight: 700; color: rgba(16, 185, 129, 0.8); text-transform: uppercase; letter-spacing: 0.5px;">DEFENSE STATUS</span>
+                <div style="font-size: 20px; font-weight: 800; color: #10b981; margin-top: 6px;">SHIELD ACTIVE</div>
+              </div>
+              <span style="font-size: 28px;">🛡️</span>
+            </div>
+          </div>
+
+          <!-- Dual Column Threat Center -->
+          <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; flex-wrap: wrap;">
+            <!-- Column 1: Anomaly Alerts Log -->
+            <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border); padding: 16px; border-radius: 16px; min-height: 280px; display: flex; flex-direction: column;">
+              <h3 style="margin-top: 0; font-size: 14px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px;">🚨 Active Threat & Anomaly Feed</h3>
+              <div id="threatFeedContainer" style="flex: 1; overflow-y: auto; max-height: 260px; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding-right: 5px;">
+                <div style="color: var(--text-muted); font-style: italic; text-align: center; padding: 40px 0;">No active threats detected. Network is clean.</div>
+              </div>
+            </div>
+
+            <!-- Column 2: Active LAN Quarantines -->
+            <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border); padding: 16px; border-radius: 16px; min-height: 280px; display: flex; flex-direction: column;">
+              <h3 style="margin-top: 0; font-size: 14px; color: var(--text2); text-transform: uppercase; letter-spacing: 1px;">🛑 LAN IP Quarantine Registry</h3>
+              <div id="quarantineListContainer" style="flex: 1; overflow-y: auto; max-height: 260px; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding-right: 5px;">
+                <div style="color: var(--text-muted); font-style: italic; text-align: center; padding: 40px 0;">No IPs quarantined. All clients authorized.</div>
+              </div>
+              <!-- Manual Quarantine Input -->
+              <div style="display: flex; gap: 8px; margin-top: 15px; border-top: 1px solid var(--border); padding-top: 12px;">
+                <input type="text" id="manualQuarantineIp" placeholder="Add IP (e.g. 10.20.30.40)" style="flex: 1; background: rgba(0,0,0,0.4); border: 1px solid var(--border); border-radius: 8px; color: white; padding: 6px 12px; font-size: 13px;">
+                <button class="btn-primary" onclick="triggerManualQuarantine()" style="background: #ef4444; border: none; font-size: 12px; padding: 6px 12px; border-radius: 8px; font-weight: bold; cursor: pointer; color: white;">Quarantine</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- SYSTEM DOCTOR DIAGNOSTICS CARD -->
         <div class="settings-card" id="systemDoctorCard" style="margin-bottom: 30px; background: rgba(30, 41, 59, 0.4); border: 1.5px solid var(--border); border-radius: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
