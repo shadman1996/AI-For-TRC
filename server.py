@@ -372,8 +372,24 @@ def login(payload: LoginPayload):
         return {"status": "error", "message": "An unexpected error occurred during login."}
 
 @app.get("/api/auth/sso")
-def sso_login():
+def sso_login(request: Request):
     try:
+        # Prevent remote domain spoofing (SSO executes on server context only)
+        client_ip = request.client.host
+        if client_ip not in ["127.0.0.1", "::1", "localhost"]:
+            import socket
+            try:
+                server_ip = socket.gethostbyname(socket.gethostname())
+                is_local = (client_ip == server_ip)
+            except:
+                is_local = False
+            
+            if not is_local:
+                return {
+                    "status": "error",
+                    "message": "One-Click SSO is restricted to the local hosting server console. To log in securely from this remote device, please use the standard StarID & Password form above."
+                }
+
         # Run PowerShell command to resolve the workstation session user identity
         result = subprocess.run(
             ["powershell", "-Command", "[System.Security.Principal.WindowsIdentity]::GetCurrent().Name"],
