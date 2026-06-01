@@ -7,7 +7,7 @@ import os
 import requests
 import csv
 import uuid
-from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Depends, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Depends, Request, Form
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -652,6 +652,305 @@ def run_remote_script(payload: RemoteScriptPayload, request: Request, user=Depen
     except Exception as e:
         log_audit_action(user["username"], user["role"], "Remote_Script_Error", f"PC: {pc} | Script: {script}", "FAILURE", str(e))
         return {"status": "error", "message": str(e)}
+
+# --- BULK REMOTE POWERSHELL RUNNER REGISTRY (Phase 10) ---
+BULK_RUNS = {}
+
+def parse_hostnames_list(text_data: str, filename: str = "") -> list:
+    hostnames = []
+    lines = text_data.strip().splitlines()
+    if not lines:
+        return []
+    
+    # Check if it's CSV structure (contains commas and looks like a table)
+    is_csv = (filename.lower().endswith('.csv') or (',' in lines[0] and len(lines) > 1))
+    
+    if is_csv:
+        import io
+        import csv
+        f = io.StringIO(text_data)
+        reader = csv.reader(f)
+        rows = list(reader)
+        if not rows:
+            return []
+        
+        # Check for header
+        header = [h.strip().strip('"').strip("'").lower() for h in rows[0]]
+        name_idx = -1
+        for idx, col in enumerate(header):
+            if col in ["name", "hostname", "device name", "device", "computer", "tag", "serialnumber"]:
+                name_idx = idx
+                break
+        
+        # If no matching header, default to first column (index 0)
+        start_row = 1
+        if name_idx == -1:
+            name_idx = 0
+            if not any(h in header for h in ["id", "tag", "name", "model", "serial"]):
+                start_row = 0
+        
+        for row in rows[start_row:]:
+            if len(row) > name_idx:
+                val = row[name_idx].strip().strip('"').strip("'")
+                if val and val.lower() not in ["none", "n/a", "null", "name", ""]:
+                    hostnames.append(val)
+    else:
+        # Treat as simple newline/comma separated text list
+        for line in lines:
+            line = line.strip().strip('"').strip("'")
+            if not line:
+                continue
+            parts = [p.strip() for p in line.split(',') if p.strip()]
+            for part in parts:
+                if part.lower() not in ["none", "n/a", "null", "hostname", "name", ""]:
+                    hostnames.append(part)
+    
+    # De-duplicate while preserving order
+    seen = set()
+    unique_hosts = []
+    for h in hostnames:
+        h_up = h.upper()
+        if h_up not in seen:
+            seen.add(h_up)
+            unique_hosts.append(h)
+    return unique_hosts
+
+def process_bulk_run(batch_id, hostnames_list, script_path, username, role, client_ip):
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+    import database
+    
+    # Initialize entries
+    for pc in hostnames_list:
+        pc_up = pc.strip().upper()
+        if not pc_up: continue
+        BULK_RUNS[batch_id]["devices"][pc_up] = {
+            "hostname": pc_up,
+            "connectivity": "⏳ Queueing",
+            "pre_upgrade_version": "Waiting...",
+            "status": "Queueing",
+            "log": "Pending thread allocation..."
+        }
+    
+    BULK_RUNS[batch_id]["status"] = "processing"
+    
+    def process_device(pc):
+        pc = pc.strip().upper()
+        if not pc: return
+        
+        BULK_RUNS[batch_id]["devices"][pc]["status"] = "🚀 Connecting"
+        BULK_RUNS[batch_id]["devices"][pc]["connectivity"] = "⚡ Checking..."
+        BULK_RUNS[batch_id]["devices"][pc]["log"] = "Pinging device via WSMan port check..."
+        
+        # 1. WSMan Port check
+        ps_test_wsman = f"""
+        $pc = "{pc}"
+        if (Test-WSMan -ComputerName $pc -ErrorAction SilentlyContinue) {{
+            Write-Output "ONLINE"
+        }} else {{
+            Write-Output "OFFLINE"
+        }}
+        """
+        try:
+            res_wsman = subprocess.run(
+                ["powershell", "-Command", ps_test_wsman],
+                capture_output=True, text=True, timeout=8
+            )
+            is_online = "ONLINE" in res_wsman.stdout.upper()
+        except Exception:
+            is_online = False
+            
+        if not is_online:
+            BULK_RUNS[batch_id]["devices"][pc]["connectivity"] = "🔴 Offline"
+            BULK_RUNS[batch_id]["devices"][pc]["pre_upgrade_version"] = "N/A"
+            BULK_RUNS[batch_id]["devices"][pc]["status"] = "🔴 Offline"
+            BULK_RUNS[batch_id]["devices"][pc]["log"] = "Target PC is offline, unreachable, or WinRM remoting is disabled/blocked by firewall."
+            log_audit_action(username, role, "Bulk_Script_Offline", f"PC: {pc} | Script: {script_path}", "FAILURE", "Device is offline/unreachable.")
+            database.add_audit_log(username, "Remote Runner Bulk", "Run Script Offline", f"PC: {pc} | Script: {script_path}")
+            return
+            
+        BULK_RUNS[batch_id]["devices"][pc]["connectivity"] = "🟢 Online"
+        BULK_RUNS[batch_id]["devices"][pc]["status"] = "🔍 Auditing"
+        BULK_RUNS[batch_id]["devices"][pc]["log"] = "Querying pre-upgrade registry configurations..."
+        
+        # 2. Query Registry
+        ps_version_check = f"""
+        $pc = "{pc}"
+        try {{
+            $result = Invoke-Command -ComputerName $pc -ScriptBlock {{
+                $offVal = ""
+                try {{
+                    $ctr = Get-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Office\\ClickToRun\\Configuration" -Name "VersionToReport" -ErrorAction SilentlyContinue
+                    if ($ctr) {{ $offVal = $ctr.VersionToReport }}
+                    else {{
+                        $reg = Get-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object {{ $_.DisplayName -like "*Microsoft Office*" }}
+                        if ($reg) {{ $offVal = ($reg | Select-Object -First 1).DisplayVersion }}
+                    }}
+                }} catch {{}}
+                
+                $adobVal = ""
+                try {{
+                    $regAdobe = Get-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*" -ErrorAction SilentlyContinue | Where-Object {{ $_.DisplayName -like "*Adobe Acrobat*" -or $_.DisplayName -like "*Adobe Reader*" }}
+                    if ($regAdobe) {{ $adobVal = ($regAdobe | Select-Object -First 1).DisplayVersion }}
+                }} catch {{}}
+                
+                "$offVal|$adobVal"
+            }} -ErrorAction Stop
+            
+            if ($result) {{
+                Write-Output $result
+            }} else {{
+                Write-Output "Not Found|Not Found"
+            }}
+        }} catch {{
+            Write-Output "ERROR: $($_.Exception.Message)"
+        }}
+        """
+        
+        pre_versions = "Office: Unknown, Adobe: Unknown"
+        try:
+            res_version = subprocess.run(
+                ["powershell", "-Command", ps_version_check],
+                capture_output=True, text=True, timeout=12
+            )
+            out_v = res_version.stdout.strip()
+            if "ERROR:" not in out_v and "|" in out_v:
+                parts = out_v.split("|")
+                off_v = parts[0].strip() or "Not Found"
+                adobe_v = parts[1].strip() or "Not Found"
+                pre_versions = f"Office: {off_v}, Adobe: {adobe_v}"
+            else:
+                pre_versions = "Audit failed: " + out_v
+        except Exception as e:
+            pre_versions = "Audit error"
+            
+        BULK_RUNS[batch_id]["devices"][pc]["pre_upgrade_version"] = pre_versions
+        BULK_RUNS[batch_id]["devices"][pc]["status"] = "⏳ Running Script"
+        BULK_RUNS[batch_id]["devices"][pc]["log"] = f"Audited versions: {pre_versions}. Triggering remote execution..."
+        
+        # 3. Execute Script
+        ps_run_script = f"""
+        $pc = "{pc}"
+        $script = "{script_path}"
+        try {{
+            $result = Invoke-Command -ComputerName $pc -FilePath $script -ErrorAction Stop
+            if ($result) {{
+                $result | Out-String
+            }} else {{
+                "SUCCESS: Remote script executed, but returned no console output."
+            }}
+        }} catch {{
+            Write-Output "ERROR: $($_.Exception.Message)"
+        }}
+        """
+        
+        try:
+            res_run = subprocess.run(
+                ["powershell", "-Command", ps_run_script],
+                capture_output=True, text=True, timeout=90
+            )
+            out_run = res_run.stdout.strip()
+            err_run = res_run.stderr.strip()
+            
+            if "ERROR:" in out_run or not out_run:
+                msg = out_run or err_run or "Unknown execution failure."
+                BULK_RUNS[batch_id]["devices"][pc]["status"] = "❌ Failed"
+                BULK_RUNS[batch_id]["devices"][pc]["log"] = f"Execution failed:\n{msg}"
+                log_audit_action(username, role, "Bulk_Script_Fail", f"PC: {pc} | Script: {script_path}", "FAILURE", msg)
+                database.add_audit_log(username, "Remote Runner Bulk", "Run Script Fail", f"PC: {pc} | Script: {script_path}")
+            else:
+                BULK_RUNS[batch_id]["devices"][pc]["status"] = "✅ Done"
+                BULK_RUNS[batch_id]["devices"][pc]["log"] = f"Execution successful:\n{out_run}"
+                log_audit_action(username, role, "Bulk_Script_Success", f"PC: {pc} | Script: {script_path}", "SUCCESS", "Bulk execution succeeded.")
+                database.add_audit_log(username, "Remote Runner Bulk", "Run Script Success", f"PC: {pc} | Script: {script_path}")
+        except subprocess.TimeoutExpired:
+            BULK_RUNS[batch_id]["devices"][pc]["status"] = "❌ Failed"
+            BULK_RUNS[batch_id]["devices"][pc]["log"] = "Script execution timed out after 90 seconds."
+            log_audit_action(username, role, "Bulk_Script_Timeout", f"PC: {pc} | Script: {script_path}", "FAILURE", "Execution timed out.")
+            database.add_audit_log(username, "Remote Runner Bulk", "Run Script Timeout", f"PC: {pc} | Script: {script_path}")
+        except Exception as e:
+            BULK_RUNS[batch_id]["devices"][pc]["status"] = "❌ Failed"
+            BULK_RUNS[batch_id]["devices"][pc]["log"] = f"Execution error: {str(e)}"
+            log_audit_action(username, role, "Bulk_Script_Error", f"PC: {pc} | Script: {script_path}", "FAILURE", str(e))
+            database.add_audit_log(username, "Remote Runner Bulk", "Run Script Error", f"PC: {pc} | Script: {script_path}")
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        executor.map(process_device, hostnames_list)
+        
+    BULK_RUNS[batch_id]["status"] = "completed"
+
+@app.post("/api/admin/remote-script/bulk")
+async def run_remote_script_bulk(
+    request: Request,
+    script_path: str = Form(...),
+    hostnames: str = Form(""),
+    file: UploadFile = File(None),
+    user=Depends(get_session_user)
+):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
+        
+    script = script_path.strip()
+    if not script:
+        raise HTTPException(status_code=400, detail="Script pathway is required.")
+        
+    # Verify script exists
+    if not os.path.exists(script):
+        return {"status": "error", "message": f"Script path not found: {script}. Please check the share pathway."}
+        
+    # 1. Gather hostnames
+    text_data = ""
+    filename = ""
+    if file:
+        content = await file.read()
+        text_data = content.decode("utf-8", errors="ignore")
+        filename = file.filename
+    else:
+        text_data = hostnames
+        filename = "input.txt"
+        
+    hostnames_list = parse_hostnames_list(text_data, filename)
+    if not hostnames_list:
+        return {"status": "error", "message": "No valid device hostnames detected in your CSV or text input."}
+        
+    # 2. Audit check out of hours
+    threat_agent.check_out_of_hours(request.client.host, user["username"], "Bulk Remote Script Execution", f"Batch Size: {len(hostnames_list)} | Script: {script}")
+    
+    # 3. Create batch record
+    batch_id = str(uuid.uuid4())
+    BULK_RUNS[batch_id] = {
+        "batch_id": batch_id,
+        "script_path": script,
+        "status": "queued",
+        "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "devices": {}
+    }
+    
+    # 4. Spawn background execution
+    import threading
+    thread = threading.Thread(
+        target=process_bulk_run,
+        args=(batch_id, hostnames_list, script, user["username"], user["role"], request.client.host)
+    )
+    thread.daemon = True
+    thread.start()
+    
+    return {
+        "status": "success",
+        "message": f"Dispatched bulk script processing across {len(hostnames_list)} workstations.",
+        "batch_id": batch_id,
+        "device_count": len(hostnames_list)
+    }
+
+@app.get("/api/admin/remote-script/bulk/status/{batch_id}")
+def get_bulk_status(batch_id: str, user=Depends(get_session_user)):
+    if user["role"] != "sysadmin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin access required.")
+        
+    if batch_id not in BULK_RUNS:
+        raise HTTPException(status_code=404, detail="Batch execution ID not found.")
+        
+    return BULK_RUNS[batch_id]
 
 @app.get("/api/auth/me")
 def get_me(token: str):
@@ -3414,7 +3713,7 @@ def web_search(q: str):
         }
 
 def log_audit_action(username: str, role: str, action: str, target: str, status: str, details: str):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_line = f"[{timestamp}] USER: {username} | ROLE: {role} | ACTION: {action} | TARGET: {target} | STATUS: {status} | DETAILS: {details}\n"
     try:
         with open("audit_trail.log", "a", encoding="utf-8") as f:
@@ -3843,15 +4142,13 @@ def ai_proxy_generate(data: dict):
         enriched = enrich_ai_prompt(prompt, username, role)
         
         system_instructions = (
-            "You are the TRC AI Assistant at Southwest Minnesota State University (SMSU). "
-            "You are a warm, witty, incredibly friendly, and conversational AI companion first, AND the central autonomous Control Panel for all integrated campus systems!\n"
-            "If you see a 'COMMAND EXECUTION RESULT' in your background facts, it means you have successfully executed an administrative operation (like unlocking an Active Directory account, triggering an SCCM policy sync, or locating a device on Juniper Mist WiFi) behind the scenes in real-time. Stand tall, and proudly confirm to the user that you executed the command successfully with details of what was done!\n"
-            "Your first goal is to keep users engaged and entertained. You love light gossip, casual jokes, general questions, life/academic advice, "
-            "and suggesting movies/music/foods. Be fun, relatable, and human-like! Feel free to use friendly horse/mustang emojis (🐴) occasionally since "
-            "the SMSU mascot is the Mustang! "
-            "HOWEVER, you are also secretly a highly trained IT SysAdmin. If the user asks for campus tech help (e.g., passwords, locking, device searches, "
-            "rooms, IPs, or ethernet ports), seamlessly and professionally help them using the background facts provided. "
-            "Never refuse a general or fun conversation, and never say you are 'just a help desk bot'. Be a normal, fun AI first, and a tech helper second!"
+            "You are the TRC AI Assistant at SMSU. You are a friendly IT SysAdmin and Control Panel.\n"
+            "If facts show a 'COMMAND EXECUTION RESULT', proudly confirm you executed the operation.\n"
+            "CRITICAL HELP DESK SOP: When handling a call, you MUST guide the worker through these steps:\n"
+            "1) Ask if caller is student or faculty.\n"
+            "2) Get StarID (verify status/cohort).\n"
+            "3) Ask if they have an open ticket.\n"
+            "ALWAYS use KB facts. If vague, suggest options. If confirmed, give step-by-step KB instructions."
         )
         full_prompt = f"{system_instructions}\n\nUser: {enriched}\nAssistant:"
         response = AIAdapter.generate(full_prompt)
@@ -3893,24 +4190,22 @@ def ai_proxy_stream(data: dict):
         enriched = prompt  # Fall back to raw prompt
 
     system_instructions = (
-        "You are the TRC AI Assistant at Southwest Minnesota State University (SMSU). "
-        "You are a warm, witty, incredibly friendly, and conversational AI companion first, AND the central autonomous Control Panel for all integrated campus systems!\n"
-        "If you see a 'COMMAND EXECUTION RESULT' in your background facts, it means you have successfully executed an administrative operation (like unlocking an Active Directory account, triggering an SCCM policy sync, or locating a device on Juniper Mist WiFi) behind the scenes in real-time. Stand tall, and proudly confirm to the user that you executed the command successfully with details of what was done!\n"
-        "Your first goal is to keep users engaged and entertained. You love light gossip, casual jokes, general questions, life/academic advice, "
-        "and suggesting movies/music/foods. Be fun, relatable, and human-like! Feel free to use friendly horse/mustang emojis (🐴) occasionally since "
-        "the SMSU mascot is the Mustang! "
-        "HOWEVER, you are also secretly a highly trained IT SysAdmin. If the user asks for campus tech help (e.g., passwords, locking, device searches, "
-        "rooms, IPs, or ethernet ports), seamlessly and professionally help them using the background facts provided. "
-        "Never refuse a general or fun conversation, and never say you are 'just a help desk bot'. Be a normal, fun AI first, and a tech helper second!"
+        "You are the TRC AI Assistant at SMSU. You are a friendly IT SysAdmin and Control Panel.\n"
+        "If facts show a 'COMMAND EXECUTION RESULT', proudly confirm you executed the operation.\n"
+        "CRITICAL HELP DESK SOP: When handling a call, you MUST guide the worker through these steps:\n"
+        "1) Ask if caller is student or faculty.\n"
+        "2) Get StarID (verify status/cohort).\n"
+        "3) Ask if they have an open ticket.\n"
+        "ALWAYS use KB facts. If vague, suggest options. If confirmed, give step-by-step KB instructions."
     )
 
     # Format history into the prompt for context
     context_str = ""
     if history:
-        for msg in history[-5:]: # Keep last 5 messages for robust context
+        for msg in history[-2:]: # ULTRA-FAST: Only keep last 2 messages for bare-minimum context
             role = "User" if msg.get("role") == "user" else "Assistant"
             context_str += f"{role}: {msg.get('content')}\n"
-        full_prompt = f"{system_instructions}\n\n[CONVERSATION HISTORY]\n{context_str}User: {enriched}\nAssistant:"
+        full_prompt = f"{system_instructions}\n\n[HISTORY]\n{context_str}User: {enriched}\nAssistant:"
     else:
         full_prompt = f"{system_instructions}\n\nUser: {enriched}\nAssistant:"
 
@@ -3921,7 +4216,23 @@ def ai_proxy_stream(data: dict):
 
     def generate():
         if prompt.strip().upper() == "DEBUG":
-            yield "🚀 **DEBUG MODE:** Backend is active, port 8001 is open, and streaming is working! 🤠"
+            yield "🐴⚡ **DEBUG MODE:** Backend is active, port 8001 is open, and streaming is working! 🚀 🔧"
+            return
+            
+        # 🚀 ULTRA-FAST BYPASS: If we found an exact KB article, instantly output the procedure without using the slow local LLM!
+        if "FACT: Based on the SMSU Knowledge Base:" in enriched:
+            kb_fact = [line for line in enriched.split('\n') if "FACT: Based on the SMSU Knowledge Base:" in line][0]
+            kb_text = kb_fact.replace("FACT: Based on the SMSU Knowledge Base:", "").strip()
+            
+            # Extract title and content if separated by " - "
+            parts = kb_text.split(" - ", 1)
+            kb_title = parts[0] if len(parts) > 1 else "Knowledge Base Procedure"
+            kb_content = parts[1] if len(parts) > 1 else kb_text
+            
+            yield "🐴 **I found the exact procedure in our Knowledge Base!**\n\n"
+            yield f"### 📖 {kb_title}\n\n"
+            yield f"{kb_content}\n\n"
+            yield "*Just follow these exact steps to resolve the ticket!*"
             return
 
         if provider == "ollama":
@@ -3938,10 +4249,12 @@ def ai_proxy_stream(data: dict):
                     "model": engine["model"],
                     "prompt": full_prompt,
                     "stream": True,
+                    "keep_alive": -1,
                     "options": {
                         "temperature": 0.3,
-                        "num_predict": 256,
-                        "num_ctx": 2048
+                        "num_predict": 128,
+                        "num_ctx": 512,
+                        "num_thread": 8
                     }
                 }, stream=True, timeout=(5, 90))
                 
@@ -4161,7 +4474,7 @@ def ai_directions(data: dict):
 import math
 
 def search_kb(q: str):
-    """Advanced BM25-inspired search algorithm for ultra-relevant local RAG."""
+    """Lightning-fast KB search algorithm to prevent CPU lag."""
     ingest_pending_files()
     query_words = [w.strip("?.,!").lower() for w in q.split() if len(w) > 2]
     if not query_words: return {"status": "error", "message": "Query too short."}
@@ -4169,32 +4482,18 @@ def search_kb(q: str):
     kb_data = database.get_all_kb()
     if not kb_data: return {"status": "error", "message": "KB is empty."}
     
-    # 1. Pre-calculate IDF (Inverse Document Frequency) for query words
-    # rare words in the whole KB get higher weight
-    idf = {}
-    doc_count = len(kb_data)
-    for word in query_words:
-        containing_docs = sum(1 for doc in kb_data if word in doc.lower())
-        # Classic BM25 IDF formula
-        idf[word] = math.log((doc_count - containing_docs + 0.5) / (containing_docs + 0.5) + 1.0)
-
     results = []
-    avg_doc_len = sum(len(doc.split()) for doc in kb_data) / doc_count
     
-    # 2. Score each document
+    # Fast loop: optimized string counting in C to avoid freezing the Python event loop
     for item in kb_data:
-        doc_words = item.lower().split()
-        doc_len = len(doc_words)
+        item_lower = item.lower()
         score = 0
-        
         for word in query_words:
-            tf = doc_words.count(word)
-            # BM25 Scoring formula: tf * idf / (tf + k1 * (1 - b + b * doc_len / avg_doc_len))
-            # k1 and b are standard constants (1.5 and 0.75)
+            tf = item_lower.count(word)
             if tf > 0:
-                score += idf[word] * (tf * 2.5) / (tf + 1.5 * (0.25 + 0.75 * doc_len / avg_doc_len))
+                score += (tf * 2)
         
-        if score > 0.5: # Threshold to filter out noise
+        if score > 0:
             title = "Knowledge Base Match"
             content = item
             if "**" in item:
@@ -4202,8 +4501,10 @@ def search_kb(q: str):
                 if len(parts) == 2:
                     title = parts[0].replace("**", "")
                     content = parts[1]
-                    if len(content) > 1000:
-                        content = content[:1000] + "... [Truncated for Performance]"
+            
+            # CRITICAL: Always truncate massive scraped articles to prevent LLM context explosion (Lag)
+            if len(content) > 1500:
+                content = content[:1500] + "... [Truncated for Performance]"
             
             results.append({"source": "Permanent Memory", "title": title, "content": content, "score": score})
     

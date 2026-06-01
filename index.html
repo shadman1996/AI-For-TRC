@@ -737,7 +737,6 @@
           </div>
         </div>
 
-        <!-- REMOTE SCRIPT RUNNER CARD -->
         <div class="settings-card" id="remoteRunnerCard" style="margin-bottom: 30px; background: rgba(30, 41, 59, 0.4); border: 1.5px solid var(--border); border-radius: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
             <div>
@@ -746,9 +745,15 @@
               </h2>
               <p style="margin: 5px 0 0; color: var(--text2); font-size: 13px;">Execute standard PowerShell scripts remotely on campus PCs using administrative credentials and secure WAG PIN approvals.</p>
             </div>
+            <!-- Tabs Header Navigation -->
+            <div style="display: flex; gap: 6px; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 10px; border: 1px solid var(--border);">
+              <button onclick="switchRunnerTab('single')" id="tabRunnerSingle" style="padding: 6px 14px; font-size: 12px; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: var(--accent); color: white;">Single Device</button>
+              <button onclick="switchRunnerTab('bulk')" id="tabRunnerBulk" style="padding: 6px 14px; font-size: 12px; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s; background: transparent; color: var(--text2);">Bulk Ingestor</button>
+            </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px; min-height: 320px;">
+          <!-- SINGLE PC PANEL -->
+          <div id="runnerSinglePanel" style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px; min-height: 320px;">
             <!-- Inputs Panel -->
             <div style="display: flex; flex-direction: column; gap: 15px; border-right: 1px solid var(--border); padding-right: 20px; justify-content: space-between;">
               <div style="display: flex; flex-direction: column; gap: 15px;">
@@ -776,6 +781,101 @@
             <div style="display: flex; flex-direction: column; gap: 10px;">
               <h4 style="margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2);">POWERSHELL REMOTE EXECUTION CONSOLE</h4>
               <div id="runnerConsole" class="patch-diff-container" style="flex: 1; background: #0f172a; border-radius: 12px; padding: 15px; font-family: monospace; font-size: 12.5px; color: #a7f3d0; border: 1px solid var(--border); overflow-y: auto; white-space: pre-wrap; min-height: 250px;">Waiting for script invocation parameters...</div>
+            </div>
+          </div>
+
+          <!-- BULK PC PANEL -->
+          <div id="runnerBulkPanel" class="hidden" style="display: flex; flex-direction: column; gap: 20px;">
+            <!-- Top Controls Grid -->
+            <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; background: rgba(0,0,0,0.15); padding: 20px; border-radius: 15px; border: 1px solid var(--border);">
+              
+              <!-- Target List & Files Ingestion -->
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                <!-- Drag and Drop area -->
+                <div>
+                  <label style="font-size: 11px; font-weight: 700; color: var(--accent2); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">1. Ingest Workstations List (.csv or .txt)</label>
+                  <div id="bulkDragDropZone" style="border: 2px dashed rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 15px; text-align: center; background: rgba(30, 41, 59, 0.2); cursor: pointer; transition: all 0.2s;" ondragover="event.preventDefault(); this.style.borderColor='var(--accent)';" ondragleave="this.style.borderColor='rgba(59, 130, 246, 0.3)';" ondrop="handleBulkDrop(event); this.style.borderColor='rgba(59, 130, 246, 0.3)';" onclick="document.getElementById('bulkFileInput').click();">
+                    <span style="font-size: 24px; display: block; margin-bottom: 4px;">📂</span>
+                    <span id="bulkUploadText" style="font-size: 12.5px; font-weight: 600; color: var(--text);">Click to Upload or Drag & Drop PC List</span>
+                    <span style="font-size: 10.5px; display: block; color: var(--text2); margin-top: 2px;">Supports CSV with "Name" column or plain TXT</span>
+                    <input type="file" id="bulkFileInput" accept=".csv,.txt" style="display: none;" onchange="handleBulkFileSelect(event)" />
+                  </div>
+                </div>
+                
+                <!-- Comma Separated / Textarea input -->
+                <div>
+                  <label style="font-size: 11px; font-weight: 700; color: var(--accent2); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">OR Enter Hostnames One-by-One / Comma Separated</label>
+                  <textarea id="bulkHostnamesText" placeholder="e.g. SM164-01, SM164-02, ITS-LAB-01" style="width: 100%; height: 60px; padding: 10px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-family: monospace; font-size: 11.5px; resize: none;"></textarea>
+                </div>
+              </div>
+              
+              <!-- Script pathway selector & run button -->
+              <div style="display: flex; flex-direction: column; gap: 15px; justify-content: space-between;">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div>
+                    <label style="font-size: 11px; font-weight: 700; color: var(--accent2); display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">2. Select Remote Upgrade Script</label>
+                    <select id="bulkPredefScripts" onchange="onBulkPredefScriptChange()" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(30, 41, 59, 0.8); color: #fff; font-size: 12.5px;">
+                      <option value="custom">-- Custom Script Path --</option>
+                      <option value="\\\\itsfs\\software\\trc\\code\\Office_2024_Mass\\Office2024\\Office2024.ps1">Office 2024 Mass Reinstall (Office2024.ps1)</option>
+                      <option value="\\\\itsfs\\software\\trc\\code\\Office_2024_Mass\\Office2024\\OfficeVersion.ps1">Query Office Version Only (OfficeVersion.ps1)</option>
+                      <option value="\\\\itsfs\\software\\trc\\code\\GPUpdateForce.ps1">GPUpdate /force & Sync</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style="font-size: 11px; font-weight: 700; color: var(--text2); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;">Target Script Pathway</label>
+                    <input type="text" id="bulkScriptPath" placeholder="e.g. \\\\itsfs\\software\\..." style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border); background: rgba(0,0,0,0.2); color: #fff; font-size: 12px;" />
+                  </div>
+                </div>
+                
+                <button id="btnRunBulkScript" onclick="triggerBulkRemoteScript()" style="width: 100%; padding: 14px; font-weight: 700; border-radius: 12px; cursor:pointer; border:none; display:flex; align-items:center; justify-content:center; gap:8px; background:linear-gradient(135deg, #10b981 0%, #047857 100%); color:white; box-shadow:0 4px 12px rgba(16, 185, 129, 0.25);">
+                  <span>🚀</span> Launch Concurrent Upgrades
+                </button>
+              </div>
+              
+            </div>
+
+            <!-- Live Status Telemetry & Progression -->
+            <div id="bulkTelemetryDashboard" class="hidden" style="display: flex; flex-direction: column; gap: 15px; animation: modalFadeIn 0.3s ease-out;">
+              <!-- Progress Stats Cards & Progression Bar -->
+              <div style="display: flex; flex-direction: column; gap: 10px; background: rgba(30, 41, 59, 0.2); border: 1px solid var(--border); border-radius: 15px; padding: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--accent2); letter-spacing: 0.5px;">Live Execution Telemetry</span>
+                  <div style="display: flex; gap: 10px; font-size: 12px;">
+                    <span id="bulkStatTotal" style="color: var(--text); font-weight: 700;">Total: 0</span> | 
+                    <span id="bulkStatSuccess" style="color: #34d399; font-weight: 700;">Done: 0</span> | 
+                    <span id="bulkStatOffline" style="color: #ef4444; font-weight: 700;">Offline: 0</span> | 
+                    <span id="bulkStatFailed" style="color: #f87171; font-weight: 700;">Failed: 0</span>
+                  </div>
+                </div>
+                <!-- Progress bar -->
+                <div style="width: 100%; height: 8px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); margin-top: 5px;">
+                  <div id="bulkProgressBar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #10b981, #34d399); border-radius: 4px; transition: width 0.4s ease-in-out;"></div>
+                </div>
+              </div>
+              
+              <!-- Telemetry Grid Table -->
+              <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 15px; overflow: hidden; max-height: 350px; overflow-y: auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                  <thead>
+                    <tr style="background: rgba(0,0,0,0.3); border-bottom: 1.5px solid var(--border);">
+                      <th style="padding: 12px 16px; font-weight: 800; color: var(--accent2);">Workstation Name</th>
+                      <th style="padding: 12px 16px; font-weight: 800; color: var(--accent2);">Connectivity</th>
+                      <th style="padding: 12px 16px; font-weight: 800; color: var(--accent2);">Pre-Upgrade Version</th>
+                      <th style="padding: 12px 16px; font-weight: 800; color: var(--accent2);">Status</th>
+                      <th style="padding: 12px 16px; font-weight: 800; color: var(--accent2);">Details / Log</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bulkTelemetryTableBody">
+                    <tr>
+                      <td colspan="5" style="text-align: center; padding: 30px; color: var(--text2);">No bulk session has been initialized. Upload a list to begin.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+          </div>
+        </div>er-radius: 12px; padding: 15px; font-family: monospace; font-size: 12.5px; color: #a7f3d0; border: 1px solid var(--border); overflow-y: auto; white-space: pre-wrap; min-height: 250px;">Waiting for script invocation parameters...</div>
             </div>
           </div>
         </div>
@@ -1316,6 +1416,6 @@
 </div>
 
 <script src="data.js?v=3.6.0"></script>
-<script src="app.js?v=4.1.1"></script>
+<script src="app.js?v=4.9.0"></script>
 </body>
 </html>

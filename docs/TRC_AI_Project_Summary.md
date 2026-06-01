@@ -1,5 +1,5 @@
 # TRC Enterprise AI Help Desk — Project Summary
-### Prepared by: Shadman Ahsan | For: Jason Kingstrom (CIO) | Date: May 2026 | Version: 4.0 (Production)
+### Prepared by: Shadman Ahsan | For: Jason Kingstrom (CIO) | Date: May 2026 | Version: 4.5 (Production)
 
 ---
 
@@ -94,6 +94,15 @@ Step-by-step campus navigation with synchronized floor plan overlays, elevation 
 
 ### 11. Network Deployment Toolkit
 Auto-detects server LAN IP. `setup_firewall.bat` opens Port 8001. Admin Panel displays the live URL for sharing with coworkers.
+
+### 12. Autonomous Threat Intelligence Agent
+Real-time LAN intrusion detection shield that heuristically quarantines IP addresses (e.g., 5+ brute force failures) and automatically terminates sessions during unauthorized WAG PIN privilege escalation attempts.
+
+### 13. Bulk Remote Script Execution Engine
+Asynchronously deploys configurations, audits pre-install registry versions, and executes remote installers concurrently across dozens of PCs. Features CSV list ingestion, WSMan connectivity checks, and live frosted-glass progress telemetry.
+
+### 14. Authenticated Deep Knowledge Base Ingestion
+Extended Playwright web scraper that handles Microsoft StarID MFA (Multi-Factor Authentication) sessions to bypass the Guest SSO boundary and scrape internal enterprise IT articles directly into the AI's RAG database.
 
 ---
 

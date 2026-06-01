@@ -483,47 +483,8 @@ async function sendMessage() {
     return;
   }
   
-  console.log("DEBUG: Intent detection complete. Proceeding to AI Prediction...");
-  
-  let matchedFaq = await getAIPrediction(text);
-  
-  if (!matchedFaq) {
-    matchedFaq = getKeywordPrediction(text);
-  }
-  
-  removeTyping(typingId);
-  
-  if (matchedFaq) {
-    lastMatchedFaq = matchedFaq;
-    renderFaqResponse(matchedFaq);
-  } else {
-    // No FAQ match — still keep talking!
-    removeTyping(typingId);
-    
-    // Quick KB check (non-blocking, short timeout)
-    let kbFound = false;
-    try {
-      const kbController = new AbortController();
-      const kbTimeout = setTimeout(() => kbController.abort(), 3000);
-      const res = await fetch(`/api/kb/search?q=${encodeURIComponent(text)}`, { signal: kbController.signal });
-      clearTimeout(kbTimeout);
-      const data = await res.json();
-      
-      if (data.status === "success" && data.data) {
-        kbFound = true;
-        if (data.data.source === "Self-Learned") {
-          appendMessage(`🧠 **From My Memory:**<br>${data.data.content}`, 'ai');
-        } else {
-          appendMessage(`📚 **Found in TDX KB: ${data.data.title}**<br>${data.data.content}`, 'ai');
-        }
-      }
-    } catch (e) { /* KB unavailable — that's fine, move on */ }
-    
-    if (!kbFound) {
-      // Go straight to AI stream — it shows "Let me think about that..." immediately
-      await streamAIResponse(text, typingId);
-    }
-  }
+  console.log("DEBUG: Intent detection complete. Proceeding directly to AI Stream...");
+  await streamAIResponse(text, typingId);
 }
 
 function initiateQA(originalText) {
@@ -3151,6 +3112,8 @@ function renderActiveRouteStep() {
   }
 }
 
+
+
 function nextRouteStep() {
   if (currentRouteStepIndex < currentRouteStepsArray.length - 1) {
     currentRouteStepIndex++;
@@ -3760,7 +3723,7 @@ function triggerRemoteScript() {
     consoleEl.innerText = `[${new Date().toLocaleTimeString()}] 🔄 Connecting to remote PC '${pc}' via WinRM...\n[${new Date().toLocaleTimeString()}] ⏳ Transferring and running script file: ${script}\n[${new Date().toLocaleTimeString()}] 🚀 Executing Invoke-Command (WSMan)... Please wait up to 45 seconds...\n`;
     
     try {
-      const res = await fetch('/api/admin/remote-script', {
+      const res = await fetch(`/api/admin/remote-script?token=${currentUser.token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pc_name: pc, script_path: script })
@@ -3789,6 +3752,282 @@ function triggerRemoteScript() {
       }
     }
   });
+}
+
+// --- BULK REMOTE POWERSHELL RUNNER (Phase 10) ---
+let bulkFileToUpload = null;
+let bulkPollInterval = null;
+let bulkActiveBatchId = null;
+let bulkDevicesCache = {}; // Cache log content locally for modal viewing
+
+function switchRunnerTab(tab) {
+  const tabSingle = document.getElementById('tabRunnerSingle');
+  const tabBulk = document.getElementById('tabRunnerBulk');
+  const panelSingle = document.getElementById('runnerSinglePanel');
+  const panelBulk = document.getElementById('runnerBulkPanel');
+  
+  if (!tabSingle || !tabBulk) return;
+  
+  if (tab === 'single') {
+    tabSingle.style.background = 'var(--accent)';
+    tabSingle.style.color = 'white';
+    tabBulk.style.background = 'transparent';
+    tabBulk.style.color = 'var(--text2)';
+    
+    panelSingle.classList.remove('hidden');
+    panelBulk.classList.add('hidden');
+  } else {
+    tabBulk.style.background = 'var(--accent)';
+    tabBulk.style.color = 'white';
+    tabSingle.style.background = 'transparent';
+    tabSingle.style.color = 'var(--text2)';
+    
+    panelBulk.classList.remove('hidden');
+    panelSingle.classList.add('hidden');
+  }
+}
+
+function onBulkPredefScriptChange() {
+  const select = document.getElementById('bulkPredefScripts');
+  const pathInput = document.getElementById('bulkScriptPath');
+  if (!select || !pathInput) return;
+  
+  if (select.value === 'custom') {
+    pathInput.value = '';
+    pathInput.disabled = false;
+  } else {
+    pathInput.value = select.value;
+    pathInput.disabled = true;
+  }
+}
+
+function handleBulkFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) {
+    bulkFileToUpload = file;
+    document.getElementById('bulkUploadText').innerHTML = `📂 Loaded: <strong style="color:var(--accent2);">${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)`;
+    document.getElementById('bulkHostnamesText').value = ""; // Clear text input
+    showToast("Uploaded workstation list successfully.", "success");
+  }
+}
+
+function handleBulkDrop(e) {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    bulkFileToUpload = file;
+    document.getElementById('bulkUploadText').innerHTML = `📂 Dropped: <strong style="color:var(--accent2);">${file.name}</strong> (${(file.size / 1024).toFixed(1)} KB)`;
+    document.getElementById('bulkHostnamesText').value = ""; // Clear text input
+    showToast("Dropped workstation list successfully.", "success");
+  }
+}
+
+function triggerBulkRemoteScript() {
+  const scriptPath = document.getElementById('bulkScriptPath').value.trim();
+  const hostnamesText = document.getElementById('bulkHostnamesText').value.trim();
+  
+  if (!scriptPath) {
+    showToast("Please specify the Remote Upgrade Script pathway.", "warning");
+    return;
+  }
+  
+  if (!bulkFileToUpload && !hostnamesText) {
+    showToast("Please upload a CSV/TXT list or type target hostnames one-by-one.", "warning");
+    return;
+  }
+  
+  const countDesc = bulkFileToUpload ? "from file " + bulkFileToUpload.name : "from manual text entry";
+  
+  requestWagApproval("Bulk Remote Upgrades: Executing script on target list (" + countDesc + ")", async () => {
+    const btn = document.getElementById('btnRunBulkScript');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = "<span>🔄</span> Initializing Batch...";
+    
+    try {
+      const formData = new FormData();
+      formData.append('script_path', scriptPath);
+      if (bulkFileToUpload) {
+        formData.append('file', bulkFileToUpload);
+      } else {
+        formData.append('hostnames', hostnamesText);
+      }
+      
+      const res = await fetch(`/api/admin/remote-script/bulk?token=${currentUser.token}`, {
+        method: 'POST',
+        body: formData // Let browser set Content-Type header with boundaries
+      });
+      
+      const data = await res.json();
+      
+      if (data.status === 'success') {
+        showToast(data.message, "success");
+        
+        // Expose telemetry dashboard panel
+        const dashboard = document.getElementById('bulkTelemetryDashboard');
+        dashboard.classList.remove('hidden');
+        
+        // Re-init status caches
+        bulkActiveBatchId = data.batch_id;
+        bulkDevicesCache = {};
+        
+        // Clear previous intervals if any
+        if (bulkPollInterval) clearInterval(bulkPollInterval);
+        
+        // Start polling
+        pollBulkStatus(data.batch_id);
+        bulkPollInterval = setInterval(() => pollBulkStatus(data.batch_id), 2000);
+      } else {
+        showToast(data.message || "Failed to initialize bulk execution.", "error");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Network error communicating with the bulk scripting host.", "error");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  });
+}
+
+async function pollBulkStatus(batchId) {
+  try {
+    const res = await fetch(`/api/admin/remote-script/bulk/status/${batchId}?token=${currentUser.token}`);
+    if (res.status === 404) {
+      clearInterval(bulkPollInterval);
+      return;
+    }
+    
+    const data = await res.json();
+    const devices = data.devices || {};
+    const deviceNames = Object.keys(devices);
+    
+    if (deviceNames.length === 0) return;
+    
+    // Calculate telemetry counters
+    let total = deviceNames.length;
+    let done = 0;
+    let offline = 0;
+    let failed = 0;
+    let active = 0;
+    
+    const tbody = document.getElementById('bulkTelemetryTableBody');
+    let html = "";
+    
+    deviceNames.forEach(name => {
+      const dev = devices[name];
+      // Save logs in global cache for details viewing
+      bulkDevicesCache[name] = dev.log || "No console output recorded yet.";
+      
+      let statusClass = "badge-low";
+      let statusBadge = dev.status;
+      
+      if (dev.status === "✅ Done") {
+        done++;
+        statusClass = "badge-live";
+      } else if (dev.status === "🔴 Offline") {
+        offline++;
+        statusClass = "badge-critical";
+      } else if (dev.status === "❌ Failed") {
+        failed++;
+        statusClass = "badge-critical";
+      } else {
+        active++;
+        statusClass = "badge-high"; // yellow/orange status for running/queueing
+      }
+      
+      let connStyle = "";
+      if (dev.connectivity.includes("Online")) {
+        connStyle = "color:#34d399; font-weight:700;";
+      } else if (dev.connectivity.includes("Offline")) {
+        connStyle = "color:#ef4444; font-weight:700;";
+      } else {
+        connStyle = "color:var(--text2); font-style:italic;";
+      }
+      
+      html += `
+        <tr style="border-bottom: 1px solid var(--border); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+          <td style="padding: 12px 16px; font-weight: 700; color: white;">${dev.hostname}</td>
+          <td style="padding: 12px 16px; ${connStyle}">${dev.connectivity}</td>
+          <td style="padding: 12px 16px; color: #a7f3d0; font-family: monospace; font-size: 12px;">${dev.pre_upgrade_version}</td>
+          <td style="padding: 12px 16px;"><span class="threat-badge ${statusClass}">${statusBadge}</span></td>
+          <td style="padding: 12px 16px;">
+            <button onclick="showBulkDeviceLog('${dev.hostname}')" style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 6px; cursor: pointer; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); color: #60a5fa; transition: all 0.2s;" onmouseover="this.style.background='rgba(59, 130, 246, 0.25)'" onmouseout="this.style.background='rgba(59, 130, 246, 0.15)'">View Logs</button>
+          </td>
+        </tr>
+      `;
+    });
+    
+    tbody.innerHTML = html;
+    
+    // Update telemetry statistics
+    document.getElementById('bulkStatTotal').innerText = "Total: " + total;
+    document.getElementById('bulkStatSuccess').innerText = "Done: " + done;
+    document.getElementById('bulkStatOffline').innerText = "Offline: " + offline;
+    document.getElementById('bulkStatFailed').innerText = "Failed: " + failed;
+    
+    // Update progress bar
+    const termCount = done + offline + failed;
+    const pct = total > 0 ? Math.round((termCount / total) * 100) : 0;
+    document.getElementById('bulkProgressBar').style.width = pct + "%";
+    
+    // Turn button green and clear interval if all completed
+    if (active === 0) {
+      clearInterval(bulkPollInterval);
+      showToast("Bulk upgrades processing complete! Review results.", "success");
+      
+      if (typeof loadAuditLogs === 'function') {
+        loadAuditLogs();
+      }
+    }
+  } catch (e) {
+    console.error("Error polling bulk status: ", e);
+  }
+}
+
+function showBulkDeviceLog(pcName) {
+  const log = bulkDevicesCache[pcName] || "No logs recorded for this workstation.";
+  
+  // Dynamically create a gorgeous glassmorphic modal overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'bulkLogModal';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0'; overlay.style.left = '0';
+  overlay.style.width = '100vw'; overlay.style.height = '100vh';
+  overlay.style.background = 'rgba(15, 23, 42, 0.85)';
+  overlay.style.backdropFilter = 'blur(12px)';
+  overlay.style.zIndex = '9999';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.animation = 'modalFadeIn 0.3s ease-out';
+  
+  const content = document.createElement('div');
+  content.style.width = '650px';
+  content.style.background = 'rgba(30, 41, 59, 0.7)';
+  content.style.border = '1.5px solid var(--border)';
+  content.style.borderRadius = '20px';
+  content.style.padding = '24px';
+  content.style.boxShadow = '0 20px 50px rgba(0,0,0,0.5)';
+  content.style.display = 'flex';
+  content.style.flexDirection = 'column';
+  content.style.gap = '15px';
+  
+  content.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h3 style="margin: 0; color: white; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+        <span>🖥️</span> Workstation Audit Logs: <span style="color:var(--accent2);">${pcName}</span>
+      </h3>
+      <button onclick="document.getElementById('bulkLogModal').remove()" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); font-size: 16px; color: var(--text2); width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.color='#fff'; this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.color='var(--text2)'; this.style.background='rgba(255,255,255,0.05)'">✕</button>
+    </div>
+    <div style="background: #0f172a; border-radius: 12px; border: 1px solid var(--border); padding: 15px; font-family: monospace; font-size: 12px; color: #a7f3d0; height: 350px; overflow-y: auto; white-space: pre-wrap;">${log}</div>
+    <div style="display: flex; justify-content: flex-end;">
+      <button onclick="document.getElementById('bulkLogModal').remove()" style="padding: 10px 20px; font-weight: 700; border-radius: 10px; border: none; background: var(--accent); color: white; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.filter='brightness(1.2)'" onmouseout="this.style.filter='none'">Close Logs</button>
+    </div>
+  `;
+  
+  overlay.appendChild(content);
+  document.body.appendChild(overlay);
 }
 
 let pendingApprovalTask = null;
@@ -3830,7 +4069,7 @@ async function submitWagApproval() {
   btn.innerText = "Verifying...";
   
   try {
-    const res = await fetch('/api/auth/verify_pin', {
+    const res = await fetch(`/api/auth/verify_pin?token=${currentUser.token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin: pin })

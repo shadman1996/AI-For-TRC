@@ -16,3 +16,8 @@ __pycache__/
 Thumbs.db
 
 .secret.key
+
+# Playwright Browser Profiles
+playwright_user_data/
+playwright_user_data_perfect/
+scratch/playwright_user_data/

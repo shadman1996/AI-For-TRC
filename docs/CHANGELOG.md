@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.5.0] - 2026-05-28
+### Added
+- **Bulk Remote Script Execution Engine**: Launched a high-performance concurrent remote execution framework supporting CSV device list ingestion. Includes WSMan pre-flight connectivity checks, remote registry auditing (`HKLM:\SOFTWARE`), thread-pool execution, and real-time telemetry badging.
+- **Autonomous Threat Intelligence Agent**: Implemented a real-time heuristics shield running on the `SecurityGuard` layer that quarantines network IPs attempting credential brute-force attacks and dynamically terminates user sessions that fail WAG PIN escalation checks 3+ times. Includes a glassmorphic dashboard with live radar monitoring.
+- **Enterprise Authenticated Knowledge Base Deep Crawl**: Upgraded the Playwright scraper to support headed execution with persistent sessions. Administrators can manually pass Microsoft StarID MFA in the browser, after which the AI automatically takes over, paginates through enterprise search results, and scrapes internal articles straight into the RAG database.
+
 ## [4.4.0] - 2026-05-27
 ### Added
 - **Active Directory SSO & Normalisation**: Auto-authenticates domain workstation principals (`System.Security.Principal.WindowsIdentity`) via `/api/auth/sso` and provisions localized session directories.

@@ -4,6 +4,7 @@
     "endpoint": "http://127.0.0.1:11434/api/generate",
     "model": "phi3:mini"
   },
+  "wag_pin": "5678",
   "starid_admin": {
     "username": "vg6340ah",
     "password": "ENC(gAAAAABqBL6FZnaR6Fb-a6T6vxggmLwBOSBOF_0j1vwNAJCpQRc-YylWi4beuS2dBM9H6R9N1MFUfUj_BCDufBbf2Y7PuK2i5w==)"
@@ -141,7 +142,7 @@
   "tdx": {
     "beid": "ENC(gAAAAABqBzNC-x_pzQILAoSVDLCuaUTlWuVd4Jz1s5XBbIuy7ug-LsHBva6E5foHNXr7HrDgzZtJB9NwplkQBa7m4Nr655TiRbtqcnVSYsYDzCmZt_YyDFUVgRokCyNu35Pm2gSk354j)",
     "wskey": "ENC(gAAAAABqC4JKJR6WCA458VavmQkplQA9SVUzarSmZvEwE0KnfB5QC0Oi3yPMb2xUahxBcCQTqLLepIEzCjjqeZ4EUW7I6Zt8GQ==)",
-    "appid": "181",
+    "appid": "180",
     "ipaas_secret": "ENC(gAAAAABqBzNC9zIjx70l0bQb8kH1mhG8dmGBoUhVXzTJqv_ZtxpD3wuka8viN7ibZjO0z05oKARnjA_asBnFYySkOfj8n6W272ZFYIOhnMifphOe3AxCzrSiRU56Gj8w5NvG4yO2LXcH)",
     "username": "TRChelpdesk",
     "ticket_username": "wagahsan",

@@ -18,9 +18,10 @@ Detailed guides are available in the [docs/](docs/SYSTEM_GUIDE.md) directory:
 - **Unified Connectivity Graph**: "Everything is Connected." The AI engine automatically traverses Active Directory, TDX, SCCM, Jamf Cloud, and Cisco ISE to build full relationship maps (User ➔ Device ➔ Network IP ➔ Physical Switch/AP).
 - **Intelligent Orchestration**: Automatically detects user intent (AD lookup, SCCM/Jamf search, WiFi status, KB search, Entity Trace).
 - **Deep Search**: Headless scraping of the StarID Admin Portal for extended user profiles.
-- **Remote Actions**: Trigger SCCM policy syncs, update scans, and device restarts directly from chat, with built-in Apple device management via Jamf.
+- **Remote Actions & Bulk Execution Engine**: Trigger SCCM policy syncs, update scans, and device restarts directly from chat, with built-in Apple device management via Jamf. Concurrently deploy scripts to dozens of offline/online PCs with real-time registry telemetry.
 - **Modular Permissions**: Granular role-based access for Help Desk, Tech, WAG, and SysAdmin staff.
-- **Knowledge Ingestion**: Drag-and-drop documentation into the AI's brain for instant learning.
+- **Enterprise Knowledge Ingestion**: Drag-and-drop documentation into the AI's brain, or use the integrated headless Playwright crawler to bypass StarID MFA and scrape deep enterprise IT knowledge base articles.
+- **Autonomous Threat Intelligence Agent**: A background Intrusion Defense Shield that heuristically quarantines malicious IPs (e.g., brute force limits) and terminates sessions during unauthorized PIN escalation attempts.
 - **Premium Customization Suite**: Personalize appearance using curated themes (Cyberpunk, Nordic, Amethyst, Dracula), Font Typography (Inter, Outfit, Roboto Mono, Playfair), and Glassmorphic Intensity levels.
 - **Integration API Gateway (Webhook)**: Built-in `POST /api/integration/query` programmatic endpoint to let external messaging bots (MS Teams, Discord, Slack) or autonomous frameworks (like OpenClaw) query your local knowledge bases and records instantly.
 

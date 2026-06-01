@@ -1,0 +1,150 @@
+Title: Make Me Admin Instructions
+Classes under <main>:
+  .DetailAction
+  .NoPrint
+  .active
+  .alert
+  .alert-info
+  .black
+  .breadcrumb
+  .break-word
+  .ckeShim
+  .clearfix
+  .col-md-12
+  .col-md-4
+  .col-md-8
+  .col-sm-5
+  .col-sm-7
+  .container
+  .fa-fw
+  .fa-print
+  .fa-solid
+  .fa-tags
+  .gray
+  .gutter-bottom
+  .gutter-bottom-none
+  .gutter-none
+  .gutter-right-sm
+  .gutter-top
+  .gutter-top-lg
+  .gutter-top-none
+  .h3
+  .h4
+  .hidden
+  .hidden-xs
+  .js-article-attachments
+  .js-attachments-body
+  .js-attachments-count
+  .js-attachments-header
+  .js-attachments-panel
+  .js-attachments-title
+  .js-open-monitor
+  .js-submenu
+  .nav
+  .navbar-nav
+  .navbar-subnav
+  .panel
+  .panel-body
+  .panel-default
+  .panel-heading
+  .panel-title
+  .print-article
+  .progress
+  .progress-bar
+  .progress-bar-striped
+  .progress-box-body
+  .progress-box-container
+  .pull-left
+  .pull-right
+  .red
+  .row
+  .shadow
+  .sr-only
+  .sr-only-focusable
+  .tab-content
+  .tdbar-sub
+  .tdx-error-text
+  .text-center
+  .text-right
+  .well
+IDs under <main>:
+  #content
+  #ctl00_ctl00_cpContent_cpContent_UpdatePanel1
+  #ctl00_ctl00_cpContent_cpContent_btnDeleteFeedback
+  #ctl00_ctl00_cpContent_cpContent_btnSendShare
+  #ctl00_ctl00_cpContent_cpContent_btnToggleAddressed
+  #ctl00_ctl00_cpContent_cpContent_btnToggleFavorite
+  #ctl00_ctl00_cpContent_cpContent_btnToggleSubscribe
+  #ctl00_ctl00_cpContent_cpContent_divBody
+  #ctl00_ctl00_cpContent_cpContent_divFeedback2
+  #ctl00_ctl00_cpContent_cpContent_divProgress
+  #ctl00_ctl00_cpContent_cpContent_divTags
+  #ctl00_ctl00_cpContent_cpContent_hdnFeedbackID
+  #ctl00_ctl00_cpContent_cpContent_hdnIsAddressed
+  #ctl00_ctl00_cpContent_cpContent_lblResults_ctl00
+  #ctl00_ctl00_cpContent_cpContent_lblResults_lblResults-label
+  #ctl00_ctl00_cpContent_cpContent_pbMain
+  #ctl00_ctl00_cpContent_cpContent_rptTags_ctl00_TagControl1_lnkDisplay
+  #ctl00_ctl00_cpContent_cpContent_upFeedbackGrid
+  #ctl00_ctl00_cpContent_divTabHeader
+  #divAttachments
+  #divHelpfulYesNo
+  #divMainContent
+  #kbContent
+  #kbSubMenu
+  #mainContent
+
+--- Main Text Content ---
+Skip to Knowledge Base content
+Search
+Articles
+Knowledge BaseInformation Technology ServicesSoftware and ApplicationsMake Me Admin Instructions
+Make Me Admin Instructions
+Tags
+ MakeMeAdmin
+Make Me Admin – Temporary Administrator Access
+
+The Make Me Admin tool allows approved users to temporarily receive administrator rights on their computer. This access is intended for tasks such as installing software or changing system settings that require elevated permissions.
+
+Administrator access is time‑limited and will be removed automatically.
+
+Windows Instructions 
+
+Click the Start menu, search for Make Me Admin, and run the application. 
+
+In the Make Me Admin window, click Grant Me Administrator Rights. 
+
+The application will close, and a Windows notification will appear in the lower-right corner confirming that administrative privileges have been granted. 
+
+You will have admin rights for 10 minutes. After that, you will automatically be removed from the Administrator group. However, any applications you launched with elevated access will continue to run with those privileges. 
+
+You will receive a notification when your administrator rights have been removed. 
+
+To manually remove admin rights before the 10-minute window ends, run Make Me Admin again and click Remove My Administrator Rights. 
+
+Once you have admin rights, you may still be prompted to enter your credentials when installing software or changing system settings: 
+
+Username: smsu.edu\StarID (e.g., smsu.edu\ab1234cd) 
+
+Password: Your StarID password 
+
+Important: When installing software, always right-click the installer and select Run as administrator. 
+ 
+
+macOS Instructions
+
+Open the Self-Service+ application. 
+
+Search for Make Me Admin in Self-Service+. 
+
+Click Run under Make Me Admin. 
+
+A warning telling you "You now have administrative rights for 30 minutes. DO NOT ABUSE THIS PRIVILEGE...” will appear, click “Make me an admin, please” 
+
+Wait for the buffer to finish then you will have admin rights for 30 minutes. 
+
+Sign in to leave feedback
+0 reviews
+ Print Article
+Attachments (0)
+No attachments found.
